@@ -1,8 +1,31 @@
 # Subscrio .NET Core Library
 
-An open-source .NET entitlement library for plan-based feature access, limits, subscriptions, customer overrides, and optional Stripe event processing.
+<p align="center">
+  <a href="https://subscrio.com/dotnet-entitlement-library/">
+    <img src="https://subscrio.com/assets/images/logo/logo-576x110.png" alt="Subscrio" width="220">
+  </a>
+</p>
 
-**The entitlement engine that translates subscriptions into feature access.**
+<p align="center">
+  <strong>The entitlement engine that translates subscriptions into feature access.</strong>
+</p>
+
+<p align="center">
+  <a href="https://www.nuget.org/packages/Subscrio.Core"><img src="https://img.shields.io/nuget/v/Subscrio.Core?style=flat-square&logo=nuget" alt="NuGet version"></a>
+  <a href="https://github.com/subscrio/subscrio-dotnet/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/.NET-8%20|%209%20|%2010-512BD4?style=flat-square&logo=dotnet" alt=".NET">
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/SQL%20Server-CC2927?style=flat-square&logo=microsoftsqlserver&logoColor=white" alt="SQL Server">
+</p>
+
+<p align="center">
+  <a href="https://subscrio.com"><img src="https://img.shields.io/badge/Website-subscrio.com-696dc0?style=flat-square" alt="Website"></a>
+  <a href="https://docs.subscrio.com"><img src="https://img.shields.io/badge/Docs-docs.subscrio.com-696dc0?style=flat-square" alt="Documentation"></a>
+  <a href="https://github.com/subscrio/subscrio"><img src="https://img.shields.io/badge/Hub-subscrio%2Fsubscrio-181717?style=flat-square&logo=github" alt="Hub"></a>
+  <a href="https://github.com/subscrio/subscrio-dotnet/issues"><img src="https://img.shields.io/badge/Issues-report-181717?style=flat-square&logo=github" alt="Issues"></a>
+</p>
+
+An open-source .NET entitlement library for plan-based feature access, limits, subscriptions, customer overrides, and optional Stripe event processing.
 
 See the [Subscrio hub README](https://github.com/subscrio/subscrio) for cross-cutting concepts and architecture.
 
@@ -700,4 +723,8 @@ Contributions are welcome! Please open issues and pull requests in this reposito
 - 💬 [Discussions](https://github.com/subscrio/subscrio/discussions) (org-wide)
 - 📚 [Testing Guide](tests/README.md)
 - 📋 [Core API reference](https://github.com/subscrio/docs/blob/main/docs/reference/core-overview.md)
+
+<p align="center">
+  Maintained by <a href="https://github.com/jasenf">Jasen Fici</a> · Part of the <a href="https://github.com/subscrio">Subscrio</a> org
+</p>
 
