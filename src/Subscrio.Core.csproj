@@ -10,7 +10,7 @@
 
   <PropertyGroup>
     <PackageId>Subscrio.Core</PackageId>
-    <Version>1.0.4</Version>
+    <Version>0.3.1</Version>
     <Authors>Subscrio</Authors>
     <Description>Open-source .NET entitlement engine for plan-based feature access, limits, subscriptions, and customer overrides with PostgreSQL or SQL Server.</Description>
     <PackageTags>subscrio;entitlement;entitlements;feature-entitlements;feature-gating;plan-based-access;subscription;efcore;postgresql;sqlserver</PackageTags>
