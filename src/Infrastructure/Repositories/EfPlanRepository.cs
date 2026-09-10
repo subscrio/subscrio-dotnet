@@ -16,23 +16,8 @@ public class EfPlanRepository : IPlanRepository
         _db = db;
     }
 
-    public async Task<PlanRecord> SaveAsync(PlanRecord record)
-    {
-        if (record.Id == 0)
-        {
-            // Insert new entity
-            _db.Plans.Add(record);
-            await _db.SaveChangesAsync();
-            return record;
-        }
-        else
-        {
-            // Update existing - record is already tracked from service layer
-            // EF Core automatically detects changes
-            await _db.SaveChangesAsync();
-            return record;
-        }
-    }
+    public Task<PlanRecord> SaveAsync(PlanRecord record) =>
+        EfSaveHelper.SaveAsync(_db, _db.Plans, record, r => r.Id);
 
     public async Task<PlanRecord?> FindByIdAsync(long id)
     {
@@ -109,15 +94,7 @@ public class EfPlanRepository : IPlanRepository
                 _ => query
             };
 
-            if (filters.Offset > 0)
-            {
-                query = query.Skip(filters.Offset);
-            }
-
-            if (filters.Limit > 0)
-            {
-                query = query.Take(filters.Limit);
-            }
+            query = query.ApplyPaging(filters.Offset, filters.Limit);
         }
         else
         {
@@ -145,11 +122,6 @@ public class EfPlanRepository : IPlanRepository
             _db.Plans.Remove(record);
             await _db.SaveChangesAsync();
         }
-    }
-
-    public async Task<bool> ExistsAsync(long id)
-    {
-        return await _db.Plans.AnyAsync(p => p.Id == id);
     }
 
     public async Task<bool> HasBillingCyclesAsync(long planId)

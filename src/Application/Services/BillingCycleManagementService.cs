@@ -3,6 +3,7 @@ using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Errors;
 using Subscrio.Core.Application.Mappers;
 using Subscrio.Core.Application.Repositories;
+using Subscrio.Core.Application.Utils;
 using Subscrio.Core.Application.Validators;
 using Subscrio.Core.Domain.Entities;
 using Subscrio.Core.Domain.ValueObjects;
@@ -43,55 +44,16 @@ public class BillingCycleManagementService
     public async Task<BillingCycleDto> CreateBillingCycleAsync(CreateBillingCycleDto dto)
     {
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid billing cycle data",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid billing cycle data");
 
-        // Verify plan exists
-        var plan = await _planRepository.FindByKeyAsync(dto.PlanKey);
-        if (plan == null)
-        {
-            throw new NotFoundException($"Plan with key '{dto.PlanKey}' not found");
-        }
+        var plan = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, dto.PlanKey, "Plan");
 
-        // Check if key already exists globally
-        var existing = await _billingCycleRepository.FindByKeyAsync(dto.Key);
-        if (existing != null)
-        {
-            throw new ConflictException($"Billing cycle with key '{dto.Key}' already exists");
-        }
+        await ValidationGuard.EnsureKeyAvailableAsync(
+            _billingCycleRepository.FindByKeyAsync, dto.Key, "Billing cycle");
 
-        // Validate duration unit
-        if (!Enum.TryParse<DurationUnit>(dto.DurationUnit, ignoreCase: true, out var durationUnit))
-        {
-            throw new ValidationException($"Invalid duration unit: {dto.DurationUnit}");
-        }
-
-        // Validate duration value based on duration unit
-        if (durationUnit == DurationUnit.Forever)
-        {
-            // For forever billing cycles, durationValue must be undefined
-            if (dto.DurationValue != null)
-            {
-                throw new ValidationException("Duration value must not be provided for forever billing cycles");
-            }
-        }
-        else
-        {
-            // For all other duration units, durationValue is required and must be positive
-            if (dto.DurationValue == null)
-            {
-                throw new ValidationException("Duration value is required for non-forever billing cycles");
-            }
-            if (dto.DurationValue <= 0)
-            {
-                throw new ValidationException("Duration value must be greater than 0");
-            }
-        }
+        // Validator ensures a valid unit; parse once for assignment
+        var durationUnit = Enum.Parse<DurationUnit>(dto.DurationUnit, ignoreCase: true);
 
         // Create record from DTO
         var record = new BillingCycleRecord
@@ -109,36 +71,17 @@ public class BillingCycleManagementService
             UpdatedAt = DateHelper.Now()
         };
 
-        // Save record
         var savedRecord = await _billingCycleRepository.SaveAsync(record);
-
-        // Get product to resolve ProductKey for DTO
-        var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
-        if (productRecord == null)
-        {
-            throw new NotFoundException("Product not found for plan");
-        }
-
-        var billingCycle = BillingCycleMapper.ToDomain(savedRecord);
-        return BillingCycleMapper.ToDto(billingCycle, productRecord.Key, plan.Key);
+        return await ToDtoAsync(savedRecord);
     }
 
     public async Task<BillingCycleDto> UpdateBillingCycleAsync(string key, UpdateBillingCycleDto dto)
     {
         var validationResult = await _updateValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid update data",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid update data");
 
-        var record = await _billingCycleRepository.FindByKeyAsync(key);
-        if (record == null)
-        {
-            throw new NotFoundException($"Billing cycle with key '{key}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _billingCycleRepository.FindByKeyAsync, key, "Billing cycle");
 
         // Update properties directly on record
         if (dto.DisplayName != null)
@@ -172,21 +115,7 @@ public class BillingCycleManagementService
 
         record.UpdatedAt = DateHelper.Now();
         var savedRecord = await _billingCycleRepository.SaveAsync(record);
-
-        // Get plan and product to resolve keys for DTO
-        var plan = await _planRepository.FindByIdAsync(record.PlanId);
-        if (plan == null)
-        {
-            throw new NotFoundException("Plan not found for billing cycle");
-        }
-        var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
-        if (productRecord == null)
-        {
-            throw new NotFoundException("Product not found for plan");
-        }
-
-        var billingCycle = BillingCycleMapper.ToDomain(savedRecord);
-        return BillingCycleMapper.ToDto(billingCycle, productRecord.Key, plan.Key);
+        return await ToDtoAsync(savedRecord);
     }
 
     public async Task<BillingCycleDto?> GetBillingCycleAsync(string key)
@@ -197,30 +126,13 @@ public class BillingCycleManagementService
             return null;
         }
 
-        // Get plan and product to resolve keys for DTO
-        var plan = await _planRepository.FindByIdAsync(record.PlanId);
-        if (plan == null)
-        {
-            throw new NotFoundException("Plan not found for billing cycle");
-        }
-        var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
-        if (productRecord == null)
-        {
-            throw new NotFoundException("Product not found for plan");
-        }
-
-        var billingCycle = BillingCycleMapper.ToDomain(record);
-        return BillingCycleMapper.ToDto(billingCycle, productRecord.Key, plan.Key);
+        return await ToDtoAsync(record);
     }
 
     public async Task<List<BillingCycleDto>> GetBillingCyclesByPlanAsync(string planKey)
     {
-        // Verify plan exists
-        var plan = await _planRepository.FindByKeyAsync(planKey);
-        if (plan == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var plan = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
         var billingCycles = await _billingCycleRepository.FindByPlanAsync(plan.Id);
         var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
@@ -228,24 +140,16 @@ public class BillingCycleManagementService
         {
             throw new NotFoundException("Product not found for plan");
         }
-        return billingCycles.Select(bc => 
-        {
-            var domainBc = BillingCycleMapper.ToDomain(bc);
-            return BillingCycleMapper.ToDto(domainBc, productRecord.Key, plan.Key);
-        }).ToList();
+        return billingCycles
+            .Select(bc => ToDto(bc, productRecord.Key, plan.Key))
+            .ToList();
     }
 
     public async Task<List<BillingCycleDto>> ListBillingCyclesAsync(BillingCycleFilterDto? filters = null)
     {
         var filterDto = filters ?? new BillingCycleFilterDto();
         var validationResult = await _filterValidator.ValidateAsync(filterDto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid filter parameters",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid filter parameters");
 
         // If filtering by plan, get plan first
         if (filterDto.PlanKey != null)
@@ -259,15 +163,10 @@ public class BillingCycleManagementService
 
         foreach (var bc in billingCycles)
         {
-            var plan = await _planRepository.FindByIdAsync(bc.PlanId);
-            if (plan != null)
+            var dto = await TryToDtoAsync(bc);
+            if (dto != null)
             {
-                var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
-                if (productRecord != null)
-                {
-                    var domainBc = BillingCycleMapper.ToDomain(bc);
-                    dtos.Add(BillingCycleMapper.ToDto(domainBc, productRecord.Key, plan.Key));
-                }
+                dtos.Add(dto);
             }
         }
 
@@ -276,11 +175,8 @@ public class BillingCycleManagementService
 
     public async Task ArchiveBillingCycleAsync(string key)
     {
-        var record = await _billingCycleRepository.FindByKeyAsync(key);
-        if (record == null)
-        {
-            throw new NotFoundException($"Billing cycle with key '{key}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _billingCycleRepository.FindByKeyAsync, key, "Billing cycle");
 
         // Simple property update - modify record directly
         record.Status = BillingCycleStatus.Archived.ToString().ToLowerInvariant();
@@ -290,11 +186,8 @@ public class BillingCycleManagementService
 
     public async Task UnarchiveBillingCycleAsync(string key)
     {
-        var record = await _billingCycleRepository.FindByKeyAsync(key);
-        if (record == null)
-        {
-            throw new NotFoundException($"Billing cycle with key '{key}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _billingCycleRepository.FindByKeyAsync, key, "Billing cycle");
 
         // Simple property update - modify record directly
         record.Status = BillingCycleStatus.Active.ToString().ToLowerInvariant();
@@ -304,11 +197,8 @@ public class BillingCycleManagementService
 
     public async Task DeleteBillingCycleAsync(string key)
     {
-        var record = await _billingCycleRepository.FindByKeyAsync(key);
-        if (record == null)
-        {
-            throw new NotFoundException($"Billing cycle with key '{key}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _billingCycleRepository.FindByKeyAsync, key, "Billing cycle");
 
         // Convert to domain entity for business rule validation
         var billingCycle = BillingCycleMapper.ToDomain(record);
@@ -345,11 +235,8 @@ public class BillingCycleManagementService
     /// </summary>
     public async Task<DateTime?> CalculateNextPeriodEndAsync(string billingCycleKey, DateTime currentPeriodEnd)
     {
-        var record = await _billingCycleRepository.FindByKeyAsync(billingCycleKey);
-        if (record == null)
-        {
-            throw new NotFoundException($"Billing cycle with key '{billingCycleKey}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _billingCycleRepository.FindByKeyAsync, billingCycleKey, "Billing cycle");
         var billingCycle = BillingCycleMapper.ToDomain(record);
         return billingCycle.CalculateNextPeriodEnd(currentPeriodEnd);
     }
@@ -362,19 +249,14 @@ public class BillingCycleManagementService
         var allCycles = await _billingCycleRepository.FindAllAsync(new BillingCycleFilterDto());
         var durationUnitStr = durationUnit.ToString().ToLowerInvariant();
         var filtered = allCycles.Where(cycle => cycle.DurationUnit == durationUnitStr).ToList();
-        
+
         var dtos = new List<BillingCycleDto>();
         foreach (var cycle in filtered)
         {
-            var plan = await _planRepository.FindByIdAsync(cycle.PlanId);
-            if (plan != null)
+            var dto = await TryToDtoAsync(cycle);
+            if (dto != null)
             {
-                var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
-                if (productRecord != null)
-                {
-                    var domainCycle = BillingCycleMapper.ToDomain(cycle);
-                    dtos.Add(BillingCycleMapper.ToDto(domainCycle, productRecord.Key, plan.Key));
-                }
+                dtos.Add(dto);
             }
         }
         return dtos;
@@ -399,19 +281,54 @@ public class BillingCycleManagementService
             var existing = await _billingCycleRepository.FindByKeyAsync(cycle.Key);
             if (existing != null)
             {
-                var plan = await _planRepository.FindByIdAsync(existing.PlanId);
-                if (plan != null)
+                var dto = await TryToDtoAsync(existing);
+                if (dto != null)
                 {
-                    var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
-                    if (productRecord != null)
-                    {
-                        var domainBc = BillingCycleMapper.ToDomain(existing);
-                        cycles.Add(BillingCycleMapper.ToDto(domainBc, productRecord.Key, plan.Key));
-                    }
+                    cycles.Add(dto);
                 }
             }
         }
 
         return cycles;
+    }
+
+    private async Task<BillingCycleDto> ToDtoAsync(BillingCycleRecord record)
+    {
+        var plan = await _planRepository.FindByIdAsync(record.PlanId);
+        if (plan == null)
+        {
+            throw new NotFoundException("Plan not found for billing cycle");
+        }
+
+        var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
+        if (productRecord == null)
+        {
+            throw new NotFoundException("Product not found for plan");
+        }
+
+        return ToDto(record, productRecord.Key, plan.Key);
+    }
+
+    private async Task<BillingCycleDto?> TryToDtoAsync(BillingCycleRecord record)
+    {
+        var plan = await _planRepository.FindByIdAsync(record.PlanId);
+        if (plan == null)
+        {
+            return null;
+        }
+
+        var productRecord = await _productRepository.FindByIdAsync(plan.ProductId);
+        if (productRecord == null)
+        {
+            return null;
+        }
+
+        return ToDto(record, productRecord.Key, plan.Key);
+    }
+
+    private static BillingCycleDto ToDto(BillingCycleRecord record, string productKey, string planKey)
+    {
+        var billingCycle = BillingCycleMapper.ToDomain(record);
+        return BillingCycleMapper.ToDto(billingCycle, productKey, planKey);
     }
 }

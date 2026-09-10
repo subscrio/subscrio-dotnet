@@ -15,23 +15,8 @@ public class EfProductRepository : IProductRepository
         _db = db;
     }
 
-    public async Task<ProductRecord> SaveAsync(ProductRecord record)
-    {
-        if (record.Id == 0)
-        {
-            // Insert new entity
-            _db.Products.Add(record);
-            await _db.SaveChangesAsync();
-            return record;
-        }
-        else
-        {
-            // Update existing - record is already tracked from service layer
-            // EF Core automatically detects changes
-            await _db.SaveChangesAsync();
-            return record;
-        }
-    }
+    public Task<ProductRecord> SaveAsync(ProductRecord record) =>
+        EfSaveHelper.SaveAsync(_db, _db.Products, record, r => r.Id);
 
     public async Task<ProductRecord?> FindByIdAsync(long id)
     {
@@ -90,15 +75,7 @@ public class EfProductRepository : IProductRepository
             query = query.OrderBy(p => p.DisplayName);
         }
 
-        if (filters?.Offset > 0)
-        {
-            query = query.Skip(filters.Offset);
-        }
-
-        if (filters?.Limit > 0)
-        {
-            query = query.Take(filters.Limit);
-        }
+        query = query.ApplyPaging(filters?.Offset ?? 0, filters?.Limit ?? 0);
 
         return await query.ToListAsync();
     }
@@ -111,11 +88,6 @@ public class EfProductRepository : IProductRepository
             _db.Products.Remove(record);
             await _db.SaveChangesAsync();
         }
-    }
-
-    public async Task<bool> ExistsAsync(long id)
-    {
-        return await _db.Products.AnyAsync(p => p.Id == id);
     }
 
     public async Task AssociateFeatureAsync(long productId, long featureId)

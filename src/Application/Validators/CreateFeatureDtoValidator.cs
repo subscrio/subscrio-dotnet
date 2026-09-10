@@ -1,6 +1,6 @@
 using FluentValidation;
-using Subscrio.Core.Application.Constants;
 using Subscrio.Core.Application.DTOs;
+using Subscrio.Core.Application.Utils;
 
 namespace Subscrio.Core.Application.Validators;
 
@@ -37,25 +37,9 @@ public class CreateFeatureDtoValidator : AbstractValidator<CreateFeatureDto>
             .When(x => x.GroupName != null)
             .WithMessage("Group name too long");
 
-        // Custom validation: defaultValue must match valueType
         RuleFor(x => x)
-            .Must(x =>
-            {
-                if (string.Equals(x.ValueType, "toggle", StringComparison.OrdinalIgnoreCase))
-                {
-                    return x.DefaultValue.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-                           x.DefaultValue.Equals("false", StringComparison.OrdinalIgnoreCase);
-                }
-                if (string.Equals(x.ValueType, "numeric", StringComparison.OrdinalIgnoreCase))
-                {
-                    return double.TryParse(x.DefaultValue, out var num) && double.IsFinite(num);
-                }
-                // Text type accepts any string
-                return true;
-            })
+            .Must(x => FeatureValueValidator.TryValidate(x.DefaultValue, x.ValueType, out _))
             .WithMessage("Invalid default value for the selected value type. Toggle must be \"true\" or \"false\", Numeric must be a valid number.")
             .OverridePropertyName("DefaultValue");
     }
 }
-
-

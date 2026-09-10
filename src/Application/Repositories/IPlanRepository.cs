@@ -13,7 +13,6 @@ public interface IPlanRepository
     Task<List<PlanRecord>> FindAllAsync(PlanFilterDto? filters = null);
     Task<List<PlanRecord>> FindByIdsAsync(List<long> ids);
     Task DeleteAsync(long id);
-    Task<bool> ExistsAsync(long id);
 
     // Foreign key checks
     Task<bool> HasBillingCyclesAsync(long planId);

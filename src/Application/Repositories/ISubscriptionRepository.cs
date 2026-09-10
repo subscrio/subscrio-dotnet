@@ -42,7 +42,6 @@ public interface ISubscriptionRepository
     Task ClearTemporaryOverridesAsync(long subscriptionId);
     
     Task DeleteAsync(long id);
-    Task<bool> ExistsAsync(long id);
 }
 
 public record SubscriptionWithCustomerRecord(SubscriptionStatusViewRecord Subscription, CustomerRecord? Customer);

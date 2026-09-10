@@ -44,25 +44,6 @@ public static class FeatureMapper
             record.Id
         );
     }
-
-    public static FeatureRecord ToPersistence(Feature feature)
-    {
-        return new FeatureRecord
-        {
-            Id = feature.Id ?? 0,
-            Key = feature.Key,
-            DisplayName = feature.DisplayName,
-            Description = feature.Props.Description,
-            ValueType = feature.ValueType.ToString().ToLowerInvariant(),
-            DefaultValue = feature.DefaultValue,
-            GroupName = feature.Props.GroupName,
-            Status = feature.Status.ToString().ToLowerInvariant(),
-            Validator = feature.Props.Validator,
-            Metadata = feature.Props.Metadata,
-            CreatedAt = feature.Props.CreatedAt,
-            UpdatedAt = feature.Props.UpdatedAt
-        };
-    }
 }
 
 

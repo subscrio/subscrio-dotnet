@@ -14,22 +14,8 @@ public class EfCustomerRepository : ICustomerRepository
         _db = db;
     }
 
-    public async Task<CustomerRecord> SaveAsync(CustomerRecord record)
-    {
-        if (record.Id == 0)
-        {
-            _db.Customers.Add(record);
-            await _db.SaveChangesAsync();
-            return record;
-        }
-        else
-        {
-            // Update existing - record is already tracked from service layer
-            // EF Core automatically detects changes
-            await _db.SaveChangesAsync();
-            return record;
-        }
-    }
+    public Task<CustomerRecord> SaveAsync(CustomerRecord record) =>
+        EfSaveHelper.SaveAsync(_db, _db.Customers, record, r => r.Id);
 
     public async Task<CustomerRecord?> FindByIdAsync(long id)
     {
@@ -43,17 +29,9 @@ public class EfCustomerRepository : ICustomerRepository
             .FirstOrDefaultAsync(c => c.Key == key);
     }
 
-    public async Task<CustomerRecord?> FindByIdForUpdateAsync(long id)
-    {
-        return await _db.Customers
-            .FirstOrDefaultAsync(c => c.Id == id);
-    }
+    public Task<CustomerRecord?> FindByIdForUpdateAsync(long id) => FindByIdAsync(id);
 
-    public async Task<CustomerRecord?> FindByKeyForUpdateAsync(string key)
-    {
-        return await _db.Customers
-            .FirstOrDefaultAsync(c => c.Key == key);
-    }
+    public Task<CustomerRecord?> FindByKeyForUpdateAsync(string key) => FindByKeyAsync(key);
 
     public async Task<CustomerRecord?> FindByExternalBillingIdAsync(string externalBillingId)
     {
@@ -98,15 +76,7 @@ public class EfCustomerRepository : ICustomerRepository
                     : query.OrderBy(c => c.CreatedAt)
             };
 
-            if (filters.Offset > 0)
-            {
-                query = query.Skip(filters.Offset);
-            }
-
-            if (filters.Limit > 0)
-            {
-                query = query.Take(filters.Limit);
-            }
+            query = query.ApplyPaging(filters.Offset, filters.Limit);
         }
         else
         {
@@ -124,11 +94,6 @@ public class EfCustomerRepository : ICustomerRepository
             _db.Customers.Remove(record);
             await _db.SaveChangesAsync();
         }
-    }
-
-    public async Task<bool> ExistsAsync(long id)
-    {
-        return await _db.Customers.AnyAsync(c => c.Id == id);
     }
 }
 

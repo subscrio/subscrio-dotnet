@@ -55,46 +55,28 @@ public class FeatureCheckerService
             return defaultValue ?? default;
         }
 
-        // Get plan
         var planRecord = await PlanRepository.FindByIdAsync(subscriptionView.PlanId);
         if (planRecord == null)
         {
             return defaultValue ?? default;
         }
 
-        // Get feature
         var featureRecord = await FeatureRepository.FindByKeyAsync(featureKey);
         if (featureRecord == null)
         {
             return defaultValue ?? default;
         }
 
-        // Load plan feature values
         var featureValueRecords = await PlanRepository.GetFeatureValuesAsync(planRecord.Id);
-        var planFeatureValues = featureValueRecords.Select(fvr => new PlanFeatureValue
-        {
-            FeatureId = fvr.FeatureId,
-            Value = fvr.Value,
-            CreatedAt = fvr.CreatedAt,
-            UpdatedAt = fvr.UpdatedAt
-        }).ToList();
+        var planFeatureValues = FeatureValueMapper.ToPlanFeatureValues(featureValueRecords);
 
-        // Load subscription feature overrides
         var overrideRecords = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionView.Id);
-        var featureOverrides = overrideRecords.Select(record => new FeatureOverride
-        {
-            FeatureId = record.FeatureId,
-            Value = record.Value,
-            Type = Enum.Parse<OverrideType>(record.OverrideType, ignoreCase: true),
-            CreatedAt = record.CreatedAt
-        }).ToList();
+        var featureOverrides = FeatureValueMapper.ToFeatureOverrides(overrideRecords);
 
-        // Convert to domain entities for resolver
         var feature = FeatureMapper.ToDomain(featureRecord);
         var plan = PlanMapper.ToDomain(planRecord, "", null, planFeatureValues);
         var subscription = SubscriptionMapper.ToDomain(subscriptionView, featureOverrides);
 
-        // Resolve using hierarchy
         var value = _resolver.Resolve(feature, plan, subscription);
         return ConvertFeatureValue(value, defaultValue);
     }
@@ -127,48 +109,28 @@ public class FeatureCheckerService
             throw new NotFoundException($"Subscription with key '{subscriptionKey}' not found");
         }
 
-        // Get plan
         var planRecord = await PlanRepository.FindByIdAsync(subscriptionView.PlanId);
         if (planRecord == null)
         {
-            // Plan not found - return empty dictionary instead of throwing
             return new Dictionary<string, string>();
         }
 
-        // Get product to find features
         var product = await ProductRepository.FindByIdAsync(planRecord.ProductId);
         if (product == null)
         {
             throw new NotFoundException("Product not found for plan");
         }
 
-        // Get all features for the product
         var features = await FeatureRepository.FindByProductAsync(product.Id);
 
-        // Load plan feature values
         var featureValueRecords = await PlanRepository.GetFeatureValuesAsync(planRecord.Id);
-        var planFeatureValues = featureValueRecords.Select(fvr => new PlanFeatureValue
-        {
-            FeatureId = fvr.FeatureId,
-            Value = fvr.Value,
-            CreatedAt = fvr.CreatedAt,
-            UpdatedAt = fvr.UpdatedAt
-        }).ToList();
+        var planFeatureValues = FeatureValueMapper.ToPlanFeatureValues(featureValueRecords);
 
-        // Load subscription feature overrides
         var overrideRecords = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionView.Id);
-        var featureOverrides = overrideRecords.Select(record => new FeatureOverride
-        {
-            FeatureId = record.FeatureId,
-            Value = record.Value,
-            Type = Enum.Parse<OverrideType>(record.OverrideType, ignoreCase: true),
-            CreatedAt = record.CreatedAt
-        }).ToList();
+        var featureOverrides = FeatureValueMapper.ToFeatureOverrides(overrideRecords);
 
-        // Resolve features for this specific subscription
         var resolved = new Dictionary<string, string>();
 
-        // Convert to domain entities
         var plan = PlanMapper.ToDomain(planRecord, product.Key, null, planFeatureValues);
         var subscription = SubscriptionMapper.ToDomain(subscriptionView, featureOverrides);
 
@@ -197,94 +159,29 @@ public class FeatureCheckerService
         T? defaultValue = default
     )
     {
-        // Find customer
         var customer = await CustomerRepository.FindByKeyAsync(customerKey);
         if (customer == null)
         {
             return defaultValue ?? default;
         }
 
-        // Get product
         var product = await ProductRepository.FindByKeyAsync(productKey);
         if (product == null)
         {
             return defaultValue ?? default;
         }
 
-        // Get feature
         var feature = await FeatureRepository.FindByKeyAsync(featureKey);
         if (feature == null)
         {
             return defaultValue ?? default;
         }
 
-        // Get active subscriptions for this customer
-        var subscriptions = await SubscriptionRepository.FindByCustomerIdAsync(
-            customer.Id,
-            new SubscriptionFilterDto
-            {
-                Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
-                Offset = 0
-            }
-        );
-
-        // Batch load all plans to avoid N+1 queries
-        var planIds = subscriptions.Select(s => s.PlanId).Distinct().ToList();
-        var plans = await PlanRepository.FindByIdsAsync(planIds);
-        var planMap = plans.ToDictionary(p => p.Id, p => p);
-
-        // Batch load all plan feature values
-        var planFeatureValuesMap = new Dictionary<long, List<PlanFeatureValue>>();
-        foreach (var planId in planIds)
-        {
-            var featureValueRecords = await PlanRepository.GetFeatureValuesAsync(planId);
-            var featureValues = featureValueRecords.Select(fvr => new PlanFeatureValue
-            {
-                FeatureId = fvr.FeatureId,
-                Value = fvr.Value,
-                CreatedAt = fvr.CreatedAt,
-                UpdatedAt = fvr.UpdatedAt
-            }).ToList();
-            planFeatureValuesMap[planId] = featureValues;
-        }
-
-        // Get product records for plans to check ProductId
-        var productIds = plans.Select(p => p.ProductId).Distinct().ToList();
-        var products = await ProductRepository.FindByIdsAsync(productIds);
-        var productMap = products.ToDictionary(p => p.Id, p => p);
-
-        // Filter subscriptions for this product using in-memory map
-        var productSubscriptions = new List<SubscriptionStatusViewRecord>();
-        foreach (var subscriptionView in subscriptions)
-        {
-            if (!planMap.TryGetValue(subscriptionView.PlanId, out var planRecord))
-            {
-                continue;
-            }
-
-            if (!productMap.TryGetValue(planRecord.ProductId, out var productRecord))
-            {
-                continue;
-            }
-
-            if (productRecord.Key != productKey)
-            {
-                continue;
-            }
-
-            var status = subscriptionView.ComputedStatus.ToLowerInvariant();
-            if (status == "active" || status == "trial")
-            {
-                productSubscriptions.Add(subscriptionView);
-            }
-        }
-
-        // Convert feature to domain entity once
+        var context = await LoadCustomerProductSubscriptionContextAsync(customer.Id, productKey);
         var featureDomain = FeatureMapper.ToDomain(feature);
-        
-        if (productSubscriptions.Count == 0)
+
+        if (context.ProductSubscriptions.Count == 0)
         {
-            // No active subscriptions for this product, return feature default
             return ConvertFeatureValue(featureDomain.DefaultValue, defaultValue);
         }
 
@@ -292,36 +189,27 @@ public class FeatureCheckerService
         // when another active/trial subscription has a plan value (mirrors FeatureValueResolver.ResolveAll).
         var resolvedValue = featureDomain.DefaultValue;
 
-        foreach (var subscriptionView in productSubscriptions)
+        foreach (var subscriptionView in context.ProductSubscriptions)
         {
-            var planRecord = planMap[subscriptionView.PlanId];
-            var productRecord = productMap[planRecord.ProductId];
-            
-            // Load subscription feature overrides
+            var planRecord = context.PlanMap[subscriptionView.PlanId];
+            var productRecord = context.ProductMap[planRecord.ProductId];
+
             var overrideRecords = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionView.Id);
-            var featureOverrides = overrideRecords.Select(record => new FeatureOverride
-            {
-                FeatureId = record.FeatureId,
-                Value = record.Value,
-                Type = Enum.Parse<OverrideType>(record.OverrideType, ignoreCase: true),
-                CreatedAt = record.CreatedAt
-            }).ToList();
-            
-            // Use batch-loaded plan feature values
-            var planFeatureValues = planFeatureValuesMap.GetValueOrDefault(planRecord.Id, new List<PlanFeatureValue>());
+            var featureOverrides = FeatureValueMapper.ToFeatureOverrides(overrideRecords);
+
+            var planFeatureValues = context.PlanFeatureValuesMap.GetValueOrDefault(planRecord.Id, new List<PlanFeatureValue>());
             var plan = PlanMapper.ToDomain(planRecord, productRecord.Key, null, planFeatureValues);
             var subscription = SubscriptionMapper.ToDomain(subscriptionView, featureOverrides);
-            
+
             var value = _resolver.Resolve(featureDomain, plan, subscription);
 
-            // If this subscription has an override for this feature, use it immediately
             if (featureDomain.Id.HasValue)
             {
                 var hasOverride = featureOverrides.Any(o => o.FeatureId == featureDomain.Id.Value);
                 if (hasOverride)
                 {
                     resolvedValue = value;
-                    break; // Override found, stop checking
+                    break;
                 }
 
                 var hasPlanValue = planFeatureValues.Any(pf => pf.FeatureId == featureDomain.Id.Value);
@@ -362,74 +250,17 @@ public class FeatureCheckerService
             return new Dictionary<string, string>();
         }
 
-        // Get product
         var product = await ProductRepository.FindByKeyAsync(productKey);
         if (product == null)
         {
             return new Dictionary<string, string>();
         }
 
-        // Get all features for the product
         var features = await FeatureRepository.FindByProductAsync(product.Id);
+        var context = await LoadCustomerProductSubscriptionContextAsync(customer.Id, productKey);
 
-        // Get active subscriptions for this customer
-        var subscriptions = await SubscriptionRepository.FindByCustomerIdAsync(
-            customer.Id,
-            new SubscriptionFilterDto
-            {
-                Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
-                Offset = 0
-            }
-        );
-
-        // Batch load all plans to avoid N+1 queries
-        var planIds = subscriptions.Select(s => s.PlanId).ToList();
-        var plans = await PlanRepository.FindByIdsAsync(planIds);
-        var planMap = plans.ToDictionary(p => p.Id, p => p);
-        
-        // Batch load all plan feature values
-        var planFeatureValuesMap = new Dictionary<long, List<PlanFeatureValue>>();
-        foreach (var planId in planIds)
+        if (context.ProductSubscriptions.Count == 0)
         {
-            var featureValueRecords = await PlanRepository.GetFeatureValuesAsync(planId);
-            var featureValues = featureValueRecords.Select(fvr => new PlanFeatureValue
-            {
-                FeatureId = fvr.FeatureId,
-                Value = fvr.Value,
-                CreatedAt = fvr.CreatedAt,
-                UpdatedAt = fvr.UpdatedAt
-            }).ToList();
-            planFeatureValuesMap[planId] = featureValues;
-        }
-        
-        // Get product records for plans to check ProductId
-        var productIds = plans.Select(p => p.ProductId).Distinct().ToList();
-        var productRecords = await ProductRepository.FindByIdsAsync(productIds);
-        var productMap = productRecords.ToDictionary(p => p.Id, p => p);
-
-        // Filter subscriptions for this product using in-memory map
-        var productSubscriptions = subscriptions.Where(subscription =>
-        {
-            if (!planMap.TryGetValue(subscription.PlanId, out var plan))
-            {
-                return false;
-            }
-
-            // Get product for plan to check ProductKey
-            if (!productMap.TryGetValue(plan.ProductId, out var planProduct))
-            {
-                return false;
-            }
-            
-            var status = subscription.ComputedStatus.ToLowerInvariant();
-            return planProduct.Key == productKey &&
-                   (status == "active" ||
-                    status == "trial");
-        }).ToList();
-
-        if (productSubscriptions.Count == 0)
-        {
-            // No active subscriptions for this product, return feature defaults
             var resolved = new Dictionary<string, string>();
             foreach (var feature in features)
             {
@@ -439,32 +270,24 @@ public class FeatureCheckerService
             return resolved;
         }
 
-        // Resolve all features - convert to domain entities
         var featureDomains = features.Select(FeatureMapper.ToDomain).ToList();
         var planDomains = new Dictionary<long, Plan>();
-        foreach (var kvp in planMap)
+        foreach (var kvp in context.PlanMap)
         {
-            var productRecord = productMap[kvp.Value.ProductId];
-            var planFeatureValues = planFeatureValuesMap.GetValueOrDefault(kvp.Key, new List<PlanFeatureValue>());
+            var productRecord = context.ProductMap[kvp.Value.ProductId];
+            var planFeatureValues = context.PlanFeatureValuesMap.GetValueOrDefault(kvp.Key, new List<PlanFeatureValue>());
             planDomains[kvp.Key] = PlanMapper.ToDomain(kvp.Value, productRecord.Key, null, planFeatureValues);
         }
-        
-        // Load subscription feature overrides for all subscriptions
+
         var subscriptionDomains = new List<Subscription>();
-        foreach (var subscriptionView in productSubscriptions)
+        foreach (var subscriptionView in context.ProductSubscriptions)
         {
             var overrideRecords = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionView.Id);
-            var featureOverrides = overrideRecords.Select(record => new FeatureOverride
-            {
-                FeatureId = record.FeatureId,
-                Value = record.Value,
-                Type = Enum.Parse<OverrideType>(record.OverrideType, ignoreCase: true),
-                CreatedAt = record.CreatedAt
-            }).ToList();
-            
+            var featureOverrides = FeatureValueMapper.ToFeatureOverrides(overrideRecords);
+
             subscriptionDomains.Add(SubscriptionMapper.ToDomain(subscriptionView, featureOverrides));
         }
-        
+
         return _resolver.ResolveAll(featureDomains, planDomains, subscriptionDomains);
     }
 
@@ -500,19 +323,11 @@ public class FeatureCheckerService
             return false;
         }
 
-        var subscriptions = await SubscriptionRepository.FindByCustomerIdAsync(
-            customer.Id,
-            new SubscriptionFilterDto
-            {
-                Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
-                Offset = 0
-            }
-        );
+        var subscriptions = await LoadCustomerSubscriptionsAsync(customer.Id);
 
         return subscriptions.Any(s =>
             s.PlanId == plan.Id &&
-            (s.ComputedStatus.ToLowerInvariant() == "active" ||
-             s.ComputedStatus.ToLowerInvariant() == "trial")
+            IsActiveOrTrial(s)
         );
     }
 
@@ -527,24 +342,12 @@ public class FeatureCheckerService
             return new List<string>();
         }
 
-        var subscriptions = await SubscriptionRepository.FindByCustomerIdAsync(
-            customer.Id,
-            new SubscriptionFilterDto
-            {
-                Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
-                Offset = 0
-            }
-        );
+        var subscriptions = await LoadCustomerSubscriptionsAsync(customer.Id);
 
         var activeSubscriptions = subscriptions
-            .Where(s =>
-            {
-                var status = s.ComputedStatus.ToLowerInvariant();
-                return status == "active" || status == "trial";
-            })
+            .Where(IsActiveOrTrial)
             .ToList();
 
-        // Batch load all plans to avoid N+1 queries
         var planIds = activeSubscriptions.Select(s => s.PlanId).Distinct().ToList();
         var plans = await PlanRepository.FindByIdsAsync(planIds);
 
@@ -566,14 +369,7 @@ public class FeatureCheckerService
         var activeSubscriptions = 0;
         if (customer != null && product != null)
         {
-            var subscriptions = await SubscriptionRepository.FindByCustomerIdAsync(
-                customer.Id,
-                new SubscriptionFilterDto
-                {
-                    Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
-                    Offset = 0
-                }
-            );
+            var subscriptions = await LoadCustomerSubscriptionsAsync(customer.Id);
 
             var planIds = subscriptions.Select(s => s.PlanId).Distinct().ToList();
             var plans = await PlanRepository.FindByIdsAsync(planIds);
@@ -583,11 +379,7 @@ public class FeatureCheckerService
                 .ToHashSet();
 
             activeSubscriptions = subscriptions.Count(s =>
-            {
-                var status = s.ComputedStatus.ToLowerInvariant();
-                return productPlanIds.Contains(s.PlanId) &&
-                       (status == "active" || status == "trial");
-            });
+                productPlanIds.Contains(s.PlanId) && IsActiveOrTrial(s));
         }
 
         var allFeatures = await GetAllFeaturesForCustomerAsync(customerKey, productKey);
@@ -597,7 +389,6 @@ public class FeatureCheckerService
         var numericFeatures = new Dictionary<string, double>();
         var textFeatures = new Dictionary<string, string>();
 
-        // Get all features to determine their types
         if (product == null)
         {
             return new FeatureUsageSummaryDto(
@@ -653,6 +444,91 @@ public class FeatureCheckerService
             textFeatures
         );
     }
+
+    private async Task<List<SubscriptionStatusViewRecord>> LoadCustomerSubscriptionsAsync(long customerId)
+    {
+        return await SubscriptionRepository.FindByCustomerIdAsync(
+            customerId,
+            new SubscriptionFilterDto
+            {
+                Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
+                Offset = 0
+            }
+        );
+    }
+
+    private static bool IsActiveOrTrial(SubscriptionStatusViewRecord subscription)
+    {
+        var status = subscription.ComputedStatus.ToLowerInvariant();
+        return status == "active" || status == "trial";
+    }
+
+    private async Task<CustomerProductSubscriptionContext> LoadCustomerProductSubscriptionContextAsync(
+        long customerId,
+        string productKey
+    )
+    {
+        var subscriptions = await LoadCustomerSubscriptionsAsync(customerId);
+
+        var planIds = subscriptions.Select(s => s.PlanId).Distinct().ToList();
+        var plans = await PlanRepository.FindByIdsAsync(planIds);
+        var planMap = plans.ToDictionary(p => p.Id, p => p);
+
+        var planFeatureValuesMap = new Dictionary<long, List<PlanFeatureValue>>();
+        foreach (var planId in planIds)
+        {
+            var featureValueRecords = await PlanRepository.GetFeatureValuesAsync(planId);
+            planFeatureValuesMap[planId] = FeatureValueMapper.ToPlanFeatureValues(featureValueRecords);
+        }
+
+        var productIds = plans.Select(p => p.ProductId).Distinct().ToList();
+        var products = await ProductRepository.FindByIdsAsync(productIds);
+        var productMap = products.ToDictionary(p => p.Id, p => p);
+
+        var productSubscriptions = FilterProductActiveSubscriptions(
+            subscriptions,
+            planMap,
+            productMap,
+            productKey
+        );
+
+        return new CustomerProductSubscriptionContext(
+            productSubscriptions,
+            planMap,
+            productMap,
+            planFeatureValuesMap
+        );
+    }
+
+    private static List<SubscriptionStatusViewRecord> FilterProductActiveSubscriptions(
+        IEnumerable<SubscriptionStatusViewRecord> subscriptions,
+        Dictionary<long, PlanRecord> planMap,
+        Dictionary<long, ProductRecord> productMap,
+        string productKey
+    )
+    {
+        return subscriptions.Where(subscription =>
+        {
+            if (!planMap.TryGetValue(subscription.PlanId, out var plan))
+            {
+                return false;
+            }
+
+            if (!productMap.TryGetValue(plan.ProductId, out var planProduct))
+            {
+                return false;
+            }
+
+            return planProduct.Key == productKey && IsActiveOrTrial(subscription);
+        }).ToList();
+    }
+
+    private sealed record CustomerProductSubscriptionContext(
+        List<SubscriptionStatusViewRecord> ProductSubscriptions,
+        Dictionary<long, PlanRecord> PlanMap,
+        Dictionary<long, ProductRecord> ProductMap,
+        Dictionary<long, List<PlanFeatureValue>> PlanFeatureValuesMap
+    );
 
     /// <summary>
     /// Convert a stored string feature value to <typeparamref name="T"/>.

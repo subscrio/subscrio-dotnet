@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Hygiene
+
+- Shared validation/lookup guards and EF save helper applied across plan/billing-cycle services and repositories
+- Key format rules remain intentionally per-entity (product/plan: lowercase-hyphen; feature/subscription: upper/underscore allowed) pending a public API decision
+
 ### Fixed
 
 - Expire subscription transitions create the replacement before archiving the expired subscription

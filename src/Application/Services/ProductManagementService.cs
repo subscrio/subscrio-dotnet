@@ -3,6 +3,7 @@ using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Errors;
 using Subscrio.Core.Application.Mappers;
 using Subscrio.Core.Application.Repositories;
+using Subscrio.Core.Application.Utils;
 using Subscrio.Core.Application.Validators;
 using Subscrio.Core.Domain.Entities;
 using Subscrio.Core.Domain.ValueObjects;
@@ -36,15 +37,10 @@ public class ProductManagementService
 
     public async Task<ProductDto> CreateProductAsync(CreateProductDto dto)
     {
-        // Validate input
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                $"Invalid product data for key '{dto.Key}': {string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage))}",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(
+            validationResult,
+            $"Invalid product data for key '{dto.Key}': {string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage))}");
 
         // Check for duplicate key
         var existing = await _productRepository.FindByKeyAsync(dto.Key);
@@ -66,22 +62,16 @@ public class ProductManagementService
             UpdatedAt = DateHelper.Now()
         };
 
-        // Save record
         var savedRecord = await _productRepository.SaveAsync(record);
 
-        // Convert to DTO
         var product = ProductMapper.ToDomain(savedRecord);
         return ProductMapper.ToDto(product);
     }
 
     public async Task<ProductDto> UpdateProductAsync(string key, UpdateProductDto dto)
     {
-        // Validate input
         var validationResult = await _updateValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException("Invalid update data", validationResult.Errors);
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid update data");
 
         // Load tracked record
         var record = await _productRepository.FindByKeyAsync(key);
@@ -114,7 +104,6 @@ public class ProductManagementService
         // Save the same tracked record
         var savedRecord = await _productRepository.SaveAsync(record);
 
-        // Convert to DTO
         var savedProduct = ProductMapper.ToDomain(savedRecord);
         return ProductMapper.ToDto(savedProduct);
     }

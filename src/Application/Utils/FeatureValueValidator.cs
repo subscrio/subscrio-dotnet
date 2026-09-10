@@ -1,5 +1,6 @@
 using Subscrio.Core.Application.Errors;
 using Subscrio.Core.Domain.ValueObjects;
+using ValidationException = Subscrio.Core.Application.Errors.ValidationException;
 
 namespace Subscrio.Core.Application.Utils;
 
@@ -16,27 +17,54 @@ public static class FeatureValueValidator
     /// <exception cref="ValidationException">If the value is invalid for the type</exception>
     public static void Validate(string value, FeatureValueType valueType)
     {
+        if (!TryValidate(value, valueType, out var error))
+        {
+            throw new ValidationException(error!);
+        }
+    }
+
+    /// <summary>
+    /// Validate a feature value from a string type name (toggle/numeric/text).
+    /// </summary>
+    public static bool TryValidate(string value, string valueType, out string? error)
+    {
+        if (!Enum.TryParse<FeatureValueType>(valueType, ignoreCase: true, out var parsed))
+        {
+            error = $"Unknown feature value type: {valueType}";
+            return false;
+        }
+
+        return TryValidate(value, parsed, out error);
+    }
+
+    public static bool TryValidate(string value, FeatureValueType valueType, out string? error)
+    {
         switch (valueType)
         {
             case FeatureValueType.Toggle:
-                if (!value.Equals("true", StringComparison.OrdinalIgnoreCase) && 
+                if (!value.Equals("true", StringComparison.OrdinalIgnoreCase) &&
                     !value.Equals("false", StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new ValidationException("Toggle features must have value \"true\" or \"false\"");
+                    error = "Toggle features must have value \"true\" or \"false\"";
+                    return false;
                 }
                 break;
             case FeatureValueType.Numeric:
                 if (!double.TryParse(value, out var num) || !double.IsFinite(num))
                 {
-                    throw new ValidationException("Numeric features must have a valid number value");
+                    error = "Numeric features must have a valid number value";
+                    return false;
                 }
                 break;
             case FeatureValueType.Text:
-                // Text features accept any string value
                 break;
             default:
-                throw new ValidationException($"Unknown feature value type: {valueType}");
+                error = $"Unknown feature value type: {valueType}";
+                return false;
         }
+
+        error = null;
+        return true;
     }
 }
 

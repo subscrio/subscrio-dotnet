@@ -67,49 +67,48 @@ public class PlanManagementService
     private async Task<List<PlanFeatureValue>> LoadPlanFeatureValuesAsync(long planId)
     {
         var featureValueRecords = await _planRepository.GetFeatureValuesAsync(planId);
-        return featureValueRecords.Select(fvr => new PlanFeatureValue
+        return FeatureValueMapper.ToPlanFeatureValues(featureValueRecords);
+    }
+
+    private async Task<List<PlanDto>> MapPlansToDtosAsync(IReadOnlyList<PlanRecord> plans)
+    {
+        var planIds = plans.Select(p => p.Id).ToList();
+        var allFeatureValues = new Dictionary<long, List<PlanFeatureValue>>();
+        foreach (var planId in planIds)
         {
-            FeatureId = fvr.FeatureId,
-            Value = fvr.Value,
-            CreatedAt = fvr.CreatedAt,
-            UpdatedAt = fvr.UpdatedAt
-        }).ToList();
+            allFeatureValues[planId] = await LoadPlanFeatureValuesAsync(planId);
+        }
+
+        var planDtos = new List<PlanDto>();
+        foreach (var record in plans)
+        {
+            var keys = await ResolvePlanKeysAsync(record);
+            var featureValues = allFeatureValues.GetValueOrDefault(record.Id, new List<PlanFeatureValue>());
+            var plan = PlanMapper.ToDomain(record, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey, featureValues);
+            planDtos.Add(PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey));
+        }
+        return planDtos;
     }
 
     public async Task<PlanDto> CreatePlanAsync(CreatePlanDto dto)
     {
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid plan data",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid plan data");
 
-        // Verify product exists by key
-        var product = await _productRepository.FindByKeyAsync(dto.ProductKey);
-        if (product == null)
-        {
-            throw new NotFoundException($"Product with key '{dto.ProductKey}' not found");
-        }
+        var product = await ValidationGuard.RequireByKeyAsync(
+            _productRepository.FindByKeyAsync, dto.ProductKey, "Product");
 
-        // Check if plan key already exists globally
-        var existing = await _planRepository.FindByKeyAsync(dto.Key);
-        if (existing != null)
-        {
-            throw new ConflictException($"Plan with key '{dto.Key}' already exists");
-        }
+        await ValidationGuard.EnsureKeyAvailableAsync(
+            _planRepository.FindByKeyAsync, dto.Key, "Plan");
 
         // Resolve OnExpireTransitionToBillingCycleId if provided
         long? onExpireTransitionToBillingCycleId = null;
         if (dto.OnExpireTransitionToBillingCycleKey != null)
         {
-            var billingCycle = await _billingCycleRepository.FindByKeyAsync(dto.OnExpireTransitionToBillingCycleKey);
-            if (billingCycle == null)
-            {
-                throw new NotFoundException($"Billing cycle with key '{dto.OnExpireTransitionToBillingCycleKey}' not found");
-            }
+            var billingCycle = await ValidationGuard.RequireByKeyAsync(
+                _billingCycleRepository.FindByKeyAsync,
+                dto.OnExpireTransitionToBillingCycleKey,
+                "Billing cycle");
             onExpireTransitionToBillingCycleId = billingCycle.Id;
         }
 
@@ -128,7 +127,6 @@ public class PlanManagementService
             UpdatedAt = DateHelper.Now()
         };
 
-        // Save record
         var savedRecord = await _planRepository.SaveAsync(record);
 
         // Load feature values (will be empty for new plan)
@@ -142,19 +140,10 @@ public class PlanManagementService
     public async Task<PlanDto> UpdatePlanAsync(string planKey, UpdatePlanDto dto)
     {
         var validationResult = await _updateValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid update data",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid update data");
 
-        var record = await _planRepository.FindByKeyAsync(planKey);
-        if (record == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
         // Load feature values before converting to domain
         var featureValues = await LoadPlanFeatureValuesAsync(record.Id);
@@ -182,11 +171,10 @@ public class PlanManagementService
         }
         else if (dto.OnExpireTransitionToBillingCycleKey != null)
         {
-            var billingCycle = await _billingCycleRepository.FindByKeyAsync(dto.OnExpireTransitionToBillingCycleKey);
-            if (billingCycle == null)
-            {
-                throw new NotFoundException($"Billing cycle with key '{dto.OnExpireTransitionToBillingCycleKey}' not found");
-            }
+            var billingCycle = await ValidationGuard.RequireByKeyAsync(
+                _billingCycleRepository.FindByKeyAsync,
+                dto.OnExpireTransitionToBillingCycleKey,
+                "Billing cycle");
             record.OnExpireTransitionToBillingCycleId = billingCycle.Id;
             record.UpdatedAt = DateHelper.Now();
         }
@@ -225,77 +213,26 @@ public class PlanManagementService
     {
         var filterDto = filters ?? new PlanFilterDto();
         var validationResult = await _filterValidator.ValidateAsync(filterDto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid filter parameters",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid filter parameters");
 
         // Filters are already validated and use productKey
         var plans = await _planRepository.FindAllAsync(filterDto);
-
-        // Batch load all plan feature values to avoid N+1 queries
-        var planIds = plans.Select(p => p.Id).ToList();
-        var allFeatureValues = new Dictionary<long, List<PlanFeatureValue>>();
-        foreach (var planId in planIds)
-        {
-            var featureValues = await LoadPlanFeatureValuesAsync(planId);
-            allFeatureValues[planId] = featureValues;
-        }
-
-        // Map each plan with resolved keys
-        var planDtos = new List<PlanDto>();
-        foreach (var record in plans)
-        {
-            var keys = await ResolvePlanKeysAsync(record);
-            var featureValues = allFeatureValues.GetValueOrDefault(record.Id, new List<PlanFeatureValue>());
-            var plan = PlanMapper.ToDomain(record, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey, featureValues);
-            planDtos.Add(PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey));
-        }
-        return planDtos;
+        return await MapPlansToDtosAsync(plans);
     }
 
     public async Task<List<PlanDto>> GetPlansByProductAsync(string productKey)
     {
-        // Verify product exists
-        var product = await _productRepository.FindByKeyAsync(productKey);
-        if (product == null)
-        {
-            throw new NotFoundException($"Product with key '{productKey}' not found");
-        }
+        await ValidationGuard.RequireByKeyAsync(
+            _productRepository.FindByKeyAsync, productKey, "Product");
 
         var plans = await _planRepository.FindByProductAsync(productKey);
-
-        // Batch load all plan feature values to avoid N+1 queries
-        var planIds = plans.Select(p => p.Id).ToList();
-        var allFeatureValues = new Dictionary<long, List<PlanFeatureValue>>();
-        foreach (var planId in planIds)
-        {
-            var featureValues = await LoadPlanFeatureValuesAsync(planId);
-            allFeatureValues[planId] = featureValues;
-        }
-
-        // Map each plan with resolved keys
-        var planDtos = new List<PlanDto>();
-        foreach (var record in plans)
-        {
-            var keys = await ResolvePlanKeysAsync(record);
-            var featureValues = allFeatureValues.GetValueOrDefault(record.Id, new List<PlanFeatureValue>());
-            var plan = PlanMapper.ToDomain(record, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey, featureValues);
-            planDtos.Add(PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey));
-        }
-        return planDtos;
+        return await MapPlansToDtosAsync(plans);
     }
 
     public async Task ArchivePlanAsync(string planKey)
     {
-        var record = await _planRepository.FindByKeyAsync(planKey);
-        if (record == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
         // Simple property update - modify record directly
         record.Status = PlanStatus.Archived.ToString().ToLowerInvariant();
@@ -305,11 +242,8 @@ public class PlanManagementService
 
     public async Task UnarchivePlanAsync(string planKey)
     {
-        var record = await _planRepository.FindByKeyAsync(planKey);
-        if (record == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
         // Simple property update - modify record directly
         record.Status = PlanStatus.Active.ToString().ToLowerInvariant();
@@ -319,11 +253,8 @@ public class PlanManagementService
 
     public async Task DeletePlanAsync(string planKey)
     {
-        var record = await _planRepository.FindByKeyAsync(planKey);
-        if (record == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var record = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
         // Load feature values (not needed for validation, but for consistency)
         var featureValues = await LoadPlanFeatureValuesAsync(record.Id);
@@ -362,17 +293,11 @@ public class PlanManagementService
 
     public async Task SetFeatureValueAsync(string planKey, string featureKey, string value)
     {
-        var planRecord = await _planRepository.FindByKeyAsync(planKey);
-        if (planRecord == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var planRecord = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
-        var featureRecord = await _featureRepository.FindByKeyAsync(featureKey);
-        if (featureRecord == null)
-        {
-            throw new NotFoundException($"Feature with key '{featureKey}' not found");
-        }
+        var featureRecord = await ValidationGuard.RequireByKeyAsync(
+            _featureRepository.FindByKeyAsync, featureKey, "Feature");
 
         var associatedFeatureIds = await _productRepository.GetFeaturesByProductAsync(planRecord.ProductId);
         if (!associatedFeatureIds.Contains(featureRecord.Id))
@@ -393,17 +318,11 @@ public class PlanManagementService
 
     public async Task RemoveFeatureValueAsync(string planKey, string featureKey)
     {
-        var planRecord = await _planRepository.FindByKeyAsync(planKey);
-        if (planRecord == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var planRecord = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
-        var featureRecord = await _featureRepository.FindByKeyAsync(featureKey);
-        if (featureRecord == null)
-        {
-            throw new NotFoundException($"Feature with key '{featureKey}' not found");
-        }
+        var featureRecord = await ValidationGuard.RequireByKeyAsync(
+            _featureRepository.FindByKeyAsync, featureKey, "Feature");
 
         // Remove feature value via repository
         await _planRepository.RemoveFeatureValueAsync(planRecord.Id, featureRecord.Id);
@@ -411,11 +330,8 @@ public class PlanManagementService
 
     public async Task<string?> GetFeatureValueAsync(string planKey, string featureKey)
     {
-        var planRecord = await _planRepository.FindByKeyAsync(planKey);
-        if (planRecord == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var planRecord = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
         var featureRecord = await _featureRepository.FindByKeyAsync(featureKey);
         if (featureRecord == null)
@@ -429,16 +345,12 @@ public class PlanManagementService
 
     public async Task<List<PlanFeatureDto>> GetPlanFeaturesAsync(string planKey)
     {
-        var planRecord = await _planRepository.FindByKeyAsync(planKey);
-        if (planRecord == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
+        var planRecord = await ValidationGuard.RequireByKeyAsync(
+            _planRepository.FindByKeyAsync, planKey, "Plan");
 
         // Get all feature values for this plan
         var featureValueRecords = await _planRepository.GetFeatureValuesAsync(planRecord.Id);
-        
-        // Convert to DTOs - need to resolve feature keys
+
         var dtos = new List<PlanFeatureDto>();
         foreach (var featureValueRecord in featureValueRecords)
         {
@@ -455,5 +367,3 @@ public class PlanManagementService
         return dtos;
     }
 }
-
-

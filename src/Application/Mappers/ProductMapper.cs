@@ -36,20 +36,5 @@ public static class ProductMapper
             record.Id
         );
     }
-
-    public static ProductRecord ToPersistence(Product product)
-    {
-        return new ProductRecord
-        {
-            Id = product.Id ?? 0, // Will be set by EF Core on insert
-            Key = product.Key,
-            DisplayName = product.DisplayName,
-            Description = product.Props.Description,
-            Status = product.Status.ToString().ToLowerInvariant(),
-            Metadata = product.Props.Metadata,
-            CreatedAt = product.Props.CreatedAt,
-            UpdatedAt = product.Props.UpdatedAt
-        };
-    }
 }
 

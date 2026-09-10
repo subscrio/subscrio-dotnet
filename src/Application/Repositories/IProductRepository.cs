@@ -11,7 +11,6 @@ public interface IProductRepository
     Task<List<ProductRecord>> FindAllAsync(ProductFilterDto? filters = null);
     Task<List<ProductRecord>> FindByIdsAsync(List<long> ids);
     Task DeleteAsync(long id);
-    Task<bool> ExistsAsync(long id);
 
     // Product-Feature associations
     Task AssociateFeatureAsync(long productId, long featureId);

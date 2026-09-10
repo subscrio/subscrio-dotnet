@@ -2,6 +2,7 @@ using System.Text.Json;
 using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Errors;
 using Subscrio.Core.Application.Services;
+using Subscrio.Core.Application.Utils;
 
 namespace Subscrio.Core.Application.Services;
 
@@ -64,7 +65,6 @@ public class ConfigSyncService
     /// </summary>
     public async Task<ConfigSyncReport> SyncFromJsonAsync(ConfigSyncDto config)
     {
-        // Initialize sync report
         var report = new ConfigSyncReport(
             Created: new ConfigSyncCounts(0, 0, 0, 0),
             Updated: new ConfigSyncCounts(0, 0, 0, 0),
@@ -653,84 +653,36 @@ public class ConfigSyncService
     }
 
     // Helper methods
-    private async Task<List<ProductDto>> ListAllProductsAsync()
-    {
-        var all = new List<ProductDto>();
-        const int pageSize = 100;
-        var offset = 0;
-        while (true)
+    private async Task<List<ProductDto>> ListAllProductsAsync() =>
+        await PagedListLoader.LoadAllAsync((offset, limit) => Products.ListProductsAsync(new ProductFilterDto
         {
-            var page = await Products.ListProductsAsync(new ProductFilterDto
-            {
-                Limit = pageSize,
-                Offset = offset,
-                SortOrder = "asc"
-            });
-            all.AddRange(page);
-            if (page.Count < pageSize) break;
-            offset += pageSize;
-        }
-        return all;
-    }
+            Limit = limit,
+            Offset = offset,
+            SortOrder = "asc"
+        }));
 
-    private async Task<List<FeatureDto>> ListAllFeaturesAsync()
-    {
-        var all = new List<FeatureDto>();
-        const int pageSize = 100;
-        var offset = 0;
-        while (true)
+    private async Task<List<FeatureDto>> ListAllFeaturesAsync() =>
+        await PagedListLoader.LoadAllAsync((offset, limit) => Features.ListFeaturesAsync(new FeatureFilterDto
         {
-            var page = await Features.ListFeaturesAsync(new FeatureFilterDto
-            {
-                Limit = pageSize,
-                Offset = offset
-            });
-            all.AddRange(page);
-            if (page.Count < pageSize) break;
-            offset += pageSize;
-        }
-        return all;
-    }
+            Limit = limit,
+            Offset = offset
+        }));
 
-    private async Task<List<PlanDto>> ListAllPlansAsync()
-    {
-        var all = new List<PlanDto>();
-        const int pageSize = 100;
-        var offset = 0;
-        while (true)
+    private async Task<List<PlanDto>> ListAllPlansAsync() =>
+        await PagedListLoader.LoadAllAsync((offset, limit) => Plans.ListPlansAsync(new PlanFilterDto
         {
-            var page = await Plans.ListPlansAsync(new PlanFilterDto
-            {
-                Limit = pageSize,
-                Offset = offset,
-                SortOrder = "asc"
-            });
-            all.AddRange(page);
-            if (page.Count < pageSize) break;
-            offset += pageSize;
-        }
-        return all;
-    }
+            Limit = limit,
+            Offset = offset,
+            SortOrder = "asc"
+        }));
 
-    private async Task<List<BillingCycleDto>> ListAllBillingCyclesAsync()
-    {
-        var all = new List<BillingCycleDto>();
-        const int pageSize = 100;
-        var offset = 0;
-        while (true)
+    private async Task<List<BillingCycleDto>> ListAllBillingCyclesAsync() =>
+        await PagedListLoader.LoadAllAsync((offset, limit) => BillingCycles.ListBillingCyclesAsync(new BillingCycleFilterDto
         {
-            var page = await BillingCycles.ListBillingCyclesAsync(new BillingCycleFilterDto
-            {
-                Limit = pageSize,
-                Offset = offset,
-                SortOrder = "asc"
-            });
-            all.AddRange(page);
-            if (page.Count < pageSize) break;
-            offset += pageSize;
-        }
-        return all;
-    }
+            Limit = limit,
+            Offset = offset,
+            SortOrder = "asc"
+        }));
 
     private static bool DeepEqual(object? a, object? b)
     {

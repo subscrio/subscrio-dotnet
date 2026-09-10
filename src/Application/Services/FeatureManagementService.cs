@@ -38,13 +38,7 @@ public class FeatureManagementService
     public async Task<FeatureDto> CreateFeatureAsync(CreateFeatureDto dto)
     {
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid feature data",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid feature data");
 
         // Check if key already exists
         var existing = await _featureRepository.FindByKeyAsync(dto.Key);
@@ -74,7 +68,6 @@ public class FeatureManagementService
             UpdatedAt = DateHelper.Now()
         };
 
-        // Save record
         var savedRecord = await _featureRepository.SaveAsync(record);
         var feature = FeatureMapper.ToDomain(savedRecord);
         return FeatureMapper.ToDto(feature);
@@ -83,13 +76,7 @@ public class FeatureManagementService
     public async Task<FeatureDto> UpdateFeatureAsync(string key, UpdateFeatureDto dto)
     {
         var validationResult = await _updateValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-        {
-            throw new ValidationException(
-                "Invalid update data",
-                validationResult.Errors
-            );
-        }
+        ValidationGuard.EnsureValid(validationResult, "Invalid update data");
 
         var record = await _featureRepository.FindByKeyAsync(key);
         if (record == null)

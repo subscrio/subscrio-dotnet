@@ -14,23 +14,8 @@ public class EfSubscriptionRepository : ISubscriptionRepository
         _db = db;
     }
 
-    public async Task<SubscriptionRecord> SaveAsync(SubscriptionRecord record)
-    {
-        if (record.Id == 0)
-        {
-            // Insert new entity
-            _db.Subscriptions.Add(record);
-            await _db.SaveChangesAsync();
-            return record;
-        }
-        else
-        {
-            // Update existing - record is already tracked from service layer
-            // EF Core automatically detects changes
-            await _db.SaveChangesAsync();
-            return record;
-        }
-    }
+    public Task<SubscriptionRecord> SaveAsync(SubscriptionRecord record) =>
+        EfSaveHelper.SaveAsync(_db, _db.Subscriptions, record, r => r.Id);
 
     // Read methods return view records (for display)
     public async Task<SubscriptionStatusViewRecord?> FindByIdAsync(long id)
@@ -65,16 +50,7 @@ public class EfSubscriptionRepository : ISubscriptionRepository
         }
 
         query = query.OrderByDescending(s => s.CreatedAt);
-
-        if (filters?.Offset > 0)
-        {
-            query = query.Skip(filters.Offset.Value);
-        }
-
-        if (filters?.Limit > 0)
-        {
-            query = query.Take(filters.Limit.Value);
-        }
+        query = query.ApplyPaging(filters?.Offset, filters?.Limit);
 
         return await query.ToListAsync();
     }
@@ -93,8 +69,7 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             .Join(_db.Customers,
                 s => s.CustomerId,
                 c => c.Id,
-                (s, c) => new { Subscription = s, Customer = c })
-            .AsQueryable();
+                (s, c) => new { Subscription = s, Customer = c });
 
         if (filters != null)
         {
@@ -106,9 +81,9 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             if (!string.IsNullOrEmpty(filters.PlanKey))
             {
                 query = query.Join(_db.Plans,
-                    x => x.Subscription.PlanId,
-                    p => p.Id,
-                    (x, p) => new { x.Subscription, x.Customer, Plan = p })
+                        x => x.Subscription.PlanId,
+                        p => p.Id,
+                        (x, p) => new { x.Subscription, x.Customer, Plan = p })
                     .Where(x => x.Plan.Key == filters.PlanKey)
                     .Select(x => new { x.Subscription, x.Customer });
             }
@@ -139,16 +114,7 @@ public class EfSubscriptionRepository : ISubscriptionRepository
         }
 
         query = query.OrderByDescending(x => x.Subscription.CreatedAt);
-
-        if (filters?.Offset > 0)
-        {
-            query = query.Skip(filters.Offset.Value);
-        }
-
-        if (filters?.Limit > 0)
-        {
-            query = query.Take(filters.Limit.Value);
-        }
+        query = query.ApplyPaging(filters?.Offset, filters?.Limit);
 
         var results = await query.ToListAsync();
         return results.Select(x => new SubscriptionWithCustomerRecord(x.Subscription, x.Customer)).ToList();
@@ -162,8 +128,27 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             .Join(_db.Customers,
                 s => s.CustomerId,
                 c => c.Id,
-                (s, c) => new { Subscription = s, Customer = c })
-            .AsQueryable();
+                (s, c) => new { Subscription = s, Customer = c });
+
+        if (resolvedFilters != null
+            && resolvedFilters.TryGetValue("planIds", out var idsObj)
+            && idsObj is List<long> { Count: > 0 } planIds)
+        {
+            query = query.Where(x => planIds.Contains(x.Subscription.PlanId));
+        }
+        else if (!string.IsNullOrEmpty(filters.ProductKey))
+        {
+            query = query.Join(_db.Plans,
+                    x => x.Subscription.PlanId,
+                    p => p.Id,
+                    (x, p) => new { x.Subscription, x.Customer, Plan = p })
+                .Join(_db.Products,
+                    x => x.Plan.ProductId,
+                    prod => prod.Id,
+                    (x, prod) => new { x.Subscription, x.Customer, Product = prod })
+                .Where(x => x.Product.Key == filters.ProductKey)
+                .Select(x => new { x.Subscription, x.Customer });
+        }
 
         if (!string.IsNullOrEmpty(filters.CustomerKey))
         {
@@ -180,26 +165,14 @@ public class EfSubscriptionRepository : ISubscriptionRepository
                 .Select(x => new { x.Subscription, x.Customer });
         }
 
-        if (!string.IsNullOrEmpty(filters.ProductKey) ||
-            (resolvedFilters != null && resolvedFilters.TryGetValue("planIds", out var planIdsObj) && planIdsObj is List<long> { Count: > 0 }))
+        if (!string.IsNullOrEmpty(filters.Status))
         {
-            if (resolvedFilters != null && resolvedFilters.TryGetValue("planIds", out var idsObj) && idsObj is List<long> planIds && planIds.Count > 0)
-            {
-                query = query.Where(x => planIds.Contains(x.Subscription.PlanId));
-            }
-            else if (!string.IsNullOrEmpty(filters.ProductKey))
-            {
-                query = query.Join(_db.Plans,
-                        x => x.Subscription.PlanId,
-                        p => p.Id,
-                        (x, p) => new { x.Subscription, x.Customer, Plan = p })
-                    .Join(_db.Products,
-                        x => x.Plan.ProductId,
-                        prod => prod.Id,
-                        (x, prod) => new { x.Subscription, x.Customer, Product = prod })
-                    .Where(x => x.Product.Key == filters.ProductKey)
-                    .Select(x => new { x.Subscription, x.Customer });
-            }
+            query = query.Where(x => x.Subscription.ComputedStatus.ToLower() == filters.Status.ToLower());
+        }
+
+        if (filters.IsArchived.HasValue)
+        {
+            query = query.Where(x => x.Subscription.IsArchived == filters.IsArchived.Value);
         }
 
         if (!string.IsNullOrEmpty(filters.BillingCycleKey) ||
@@ -218,16 +191,6 @@ public class EfSubscriptionRepository : ISubscriptionRepository
                     .Where(x => x.BillingCycle.Key == filters.BillingCycleKey)
                     .Select(x => new { x.Subscription, x.Customer });
             }
-        }
-
-        if (!string.IsNullOrEmpty(filters.Status))
-        {
-            query = query.Where(x => x.Subscription.ComputedStatus.ToLower() == filters.Status.ToLower());
-        }
-
-        if (filters.IsArchived.HasValue)
-        {
-            query = query.Where(x => x.Subscription.IsArchived == filters.IsArchived.Value);
         }
 
         if (filters.ActivationDateFrom.HasValue)
@@ -262,11 +225,7 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             query = query.Where(x => x.Subscription.TrialEndDate == null);
 
         query = query.OrderByDescending(x => x.Subscription.CreatedAt);
-
-        if (filters.Offset > 0)
-            query = query.Skip(filters.Offset.Value);
-        if (filters.Limit > 0)
-            query = query.Take(filters.Limit.Value);
+        query = query.ApplyPaging(filters.Offset, filters.Limit);
 
         var results = await query.ToListAsync();
         return results.Select(x => new SubscriptionWithCustomerRecord(x.Subscription, x.Customer)).ToList();
@@ -412,10 +371,5 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             _db.Subscriptions.Remove(record);
             await _db.SaveChangesAsync();
         }
-    }
-
-    public async Task<bool> ExistsAsync(long id)
-    {
-        return await _db.Subscriptions.AnyAsync(s => s.Id == id);
     }
 }

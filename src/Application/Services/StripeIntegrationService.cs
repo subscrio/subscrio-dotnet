@@ -134,13 +134,7 @@ public class StripeIntegrationService
             
             // Load feature overrides
             var featureOverrides = await SubscriptionRepository.GetFeatureOverridesAsync(existingSubscriptionRecord.Id);
-            var overrideList = featureOverrides.Select(fo => new FeatureOverride
-            {
-                FeatureId = fo.FeatureId,
-                Value = fo.Value,
-                Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-                CreatedAt = fo.CreatedAt
-            }).ToList();
+            var overrideList = FeatureValueMapper.ToFeatureOverrides(featureOverrides);
             
             // Convert to domain entity
             var existingSubscriptionEntity = SubscriptionMapper.ToDomain(existingSubscriptionRecord, overrideList);
@@ -187,13 +181,7 @@ public class StripeIntegrationService
             
             // Load feature overrides
             var featureOverrides2 = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionRecord2.Id);
-            var overrideList2 = featureOverrides2.Select(fo => new FeatureOverride
-            {
-                FeatureId = fo.FeatureId,
-                Value = fo.Value,
-                Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-                CreatedAt = fo.CreatedAt
-            }).ToList();
+            var overrideList2 = FeatureValueMapper.ToFeatureOverrides(featureOverrides2);
             
             // Convert to domain entity
             var subscriptionEntity2 = SubscriptionMapper.ToDomain(subscriptionRecord2, overrideList2);
@@ -298,13 +286,7 @@ public class StripeIntegrationService
         
         // Load feature overrides
         var featureOverrides = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionRecord.Id);
-        var overrideList = featureOverrides.Select(fo => new FeatureOverride
-        {
-            FeatureId = fo.FeatureId,
-            Value = fo.Value,
-            Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-            CreatedAt = fo.CreatedAt
-        }).ToList();
+        var overrideList = FeatureValueMapper.ToFeatureOverrides(featureOverrides);
         
         // Convert to domain entity
         var subscriptionEntity = SubscriptionMapper.ToDomain(subscriptionRecord, overrideList);
@@ -354,13 +336,7 @@ public class StripeIntegrationService
         
         // Load feature overrides
         var featureOverrides = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionRecord.Id);
-        var overrideList = featureOverrides.Select(fo => new FeatureOverride
-        {
-            FeatureId = fo.FeatureId,
-            Value = fo.Value,
-            Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-            CreatedAt = fo.CreatedAt
-        }).ToList();
+        var overrideList = FeatureValueMapper.ToFeatureOverrides(featureOverrides);
         
         // Convert to domain entity
         var subscriptionEntity = SubscriptionMapper.ToDomain(subscriptionRecord, overrideList);
@@ -405,13 +381,7 @@ public class StripeIntegrationService
         
         // Load feature overrides
         var featureOverrides = await SubscriptionRepository.GetFeatureOverridesAsync(subscriptionRecord.Id);
-        var overrideList = featureOverrides.Select(fo => new FeatureOverride
-        {
-            FeatureId = fo.FeatureId,
-            Value = fo.Value,
-            Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-            CreatedAt = fo.CreatedAt
-        }).ToList();
+        var overrideList = FeatureValueMapper.ToFeatureOverrides(featureOverrides);
         
         // Convert to domain entity
         var subscriptionEntity = SubscriptionMapper.ToDomain(subscriptionRecord, overrideList);
@@ -616,13 +586,7 @@ public class StripeIntegrationService
         
         // Load plan feature values
         var featureValueRecords = await PlanRepository.GetFeatureValuesAsync(planRecord.Id);
-        var featureValues = featureValueRecords.Select(fvr => new PlanFeatureValue
-        {
-            FeatureId = fvr.FeatureId,
-            Value = fvr.Value,
-            CreatedAt = fvr.CreatedAt,
-            UpdatedAt = fvr.UpdatedAt
-        }).ToList();
+        var featureValues = FeatureValueMapper.ToPlanFeatureValues(featureValueRecords);
         
         // Convert to domain entity
         var plan = PlanMapper.ToDomain(planRecord, "", null, featureValues);
@@ -1110,13 +1074,7 @@ public class StripeIntegrationService
         if (_hooks.HasListeners(afterEvent))
         {
             var featureOverrides = await SubscriptionRepository.GetFeatureOverridesAsync(saved.Id);
-            var overrideList = featureOverrides.Select(fo => new FeatureOverride
-            {
-                FeatureId = fo.FeatureId,
-                Value = fo.Value,
-                Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-                CreatedAt = fo.CreatedAt
-            }).ToList();
+            var overrideList = FeatureValueMapper.ToFeatureOverrides(featureOverrides);
             var savedEntity = SubscriptionMapper.ToDomain(saved, overrideList);
             await _hooks.EmitSubscriptionAfterAsync(
                 afterEvent,

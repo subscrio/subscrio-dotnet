@@ -71,13 +71,7 @@ public class SubscriptionManagementService
     private async Task<List<FeatureOverride>> LoadFeatureOverridesAsync(long subscriptionId)
     {
         var featureOverrides = await _subscriptionRepository.GetFeatureOverridesAsync(subscriptionId);
-        return featureOverrides.Select(fo => new FeatureOverride
-        {
-            FeatureId = fo.FeatureId,
-            Value = fo.Value,
-            Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-            CreatedAt = fo.CreatedAt
-        }).ToList();
+        return FeatureValueMapper.ToFeatureOverrides(featureOverrides);
     }
 
     private async Task<(string CustomerKey, string ProductKey, string PlanKey, string BillingCycleKey)> ResolveSubscriptionKeysAsync(SubscriptionStatusViewRecord subscription)
@@ -305,7 +299,6 @@ public class SubscriptionManagementService
             }
         }
 
-        // Save record
         var savedRecord = await _subscriptionRepository.SaveAsync(record);
 
         // Load from view to get computed status for DTO

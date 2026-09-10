@@ -41,23 +41,6 @@ public static class PlanMapper
             record.Id
         );
     }
-
-    public static PlanRecord ToPersistence(Plan plan, long productId, long? onExpireTransitionToBillingCycleId)
-    {
-        return new PlanRecord
-        {
-            Id = plan.Id ?? 0,
-            ProductId = productId,
-            Key = plan.Key,
-            DisplayName = plan.DisplayName,
-            Description = plan.Props.Description,
-            Status = plan.Status.ToString().ToLowerInvariant(),
-            OnExpireTransitionToBillingCycleId = onExpireTransitionToBillingCycleId,
-            Metadata = plan.Props.Metadata,
-            CreatedAt = plan.Props.CreatedAt,
-            UpdatedAt = plan.Props.UpdatedAt
-        };
-    }
 }
 
 

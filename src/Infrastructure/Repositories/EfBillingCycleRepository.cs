@@ -14,22 +14,8 @@ public class EfBillingCycleRepository : IBillingCycleRepository
         _db = db;
     }
 
-    public async Task<BillingCycleRecord> SaveAsync(BillingCycleRecord record)
-    {
-        if (record.Id == 0)
-        {
-            _db.BillingCycles.Add(record);
-            await _db.SaveChangesAsync();
-            return record;
-        }
-        else
-        {
-            // Update existing - record is already tracked from service layer
-            // EF Core automatically detects changes
-            await _db.SaveChangesAsync();
-            return record;
-        }
-    }
+    public Task<BillingCycleRecord> SaveAsync(BillingCycleRecord record) =>
+        EfSaveHelper.SaveAsync(_db, _db.BillingCycles, record, r => r.Id);
 
     public async Task<BillingCycleRecord?> FindByIdAsync(long id)
     {
@@ -106,15 +92,7 @@ public class EfBillingCycleRepository : IBillingCycleRepository
                     : query.OrderBy(bc => bc.CreatedAt)
             };
 
-            if (filters.Offset > 0)
-            {
-                query = query.Skip(filters.Offset);
-            }
-
-            if (filters.Limit > 0)
-            {
-                query = query.Take(filters.Limit);
-            }
+            query = query.ApplyPaging(filters.Offset, filters.Limit);
         }
         else
         {
@@ -132,11 +110,6 @@ public class EfBillingCycleRepository : IBillingCycleRepository
             _db.BillingCycles.Remove(record);
             await _db.SaveChangesAsync();
         }
-    }
-
-    public async Task<bool> ExistsAsync(long id)
-    {
-        return await _db.BillingCycles.AnyAsync(bc => bc.Id == id);
     }
 }
 

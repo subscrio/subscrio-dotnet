@@ -39,22 +39,6 @@ public static class CustomerMapper
             record.Id
         );
     }
-
-    public static CustomerRecord ToPersistence(Customer customer)
-    {
-        return new CustomerRecord
-        {
-            Id = customer.Id ?? 0,
-            Key = customer.Key,
-            DisplayName = customer.Props.DisplayName,
-            Email = customer.Props.Email,
-            ExternalBillingId = customer.ExternalBillingId,
-            Status = customer.Status.ToString().ToLowerInvariant(),
-            Metadata = customer.Props.Metadata,
-            CreatedAt = customer.Props.CreatedAt,
-            UpdatedAt = customer.Props.UpdatedAt
-        };
-    }
 }
 
 

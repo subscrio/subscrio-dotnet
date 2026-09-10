@@ -11,7 +11,6 @@ public interface IFeatureRepository
     Task<List<FeatureRecord>> FindAllAsync(FeatureFilterDto? filters = null);
     Task<List<FeatureRecord>> FindByIdsAsync(List<long> ids);
     Task DeleteAsync(long id);
-    Task<bool> ExistsAsync(long id);
 
     // Get features by product
     Task<List<FeatureRecord>> FindByProductAsync(long productId);

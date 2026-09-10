@@ -14,22 +14,8 @@ public class EfFeatureRepository : IFeatureRepository
         _db = db;
     }
 
-    public async Task<FeatureRecord> SaveAsync(FeatureRecord record)
-    {
-        if (record.Id == 0)
-        {
-            _db.Features.Add(record);
-            await _db.SaveChangesAsync();
-            return record;
-        }
-        else
-        {
-            // Update existing - record is already tracked from service layer
-            // EF Core automatically detects changes
-            await _db.SaveChangesAsync();
-            return record;
-        }
-    }
+    public Task<FeatureRecord> SaveAsync(FeatureRecord record) =>
+        EfSaveHelper.SaveAsync(_db, _db.Features, record, r => r.Id);
 
     public async Task<FeatureRecord?> FindByIdAsync(long id)
     {
@@ -87,15 +73,7 @@ public class EfFeatureRepository : IFeatureRepository
                     : query.OrderBy(f => f.CreatedAt)
             };
 
-            if (filters.Offset > 0)
-            {
-                query = query.Skip(filters.Offset);
-            }
-
-            if (filters.Limit > 0)
-            {
-                query = query.Take(filters.Limit);
-            }
+            query = query.ApplyPaging(filters.Offset, filters.Limit);
         }
         else
         {
@@ -135,11 +113,6 @@ public class EfFeatureRepository : IFeatureRepository
             _db.Features.Remove(record);
             await _db.SaveChangesAsync();
         }
-    }
-
-    public async Task<bool> ExistsAsync(long id)
-    {
-        return await _db.Features.AnyAsync(f => f.Id == id);
     }
 
     public async Task<bool> HasProductAssociationsAsync(long featureId)

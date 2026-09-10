@@ -13,7 +13,6 @@ public interface ICustomerRepository
     Task<CustomerRecord?> FindByExternalBillingIdAsync(string externalBillingId);
     Task<List<CustomerRecord>> FindAllAsync(CustomerFilterDto? filters = null);
     Task DeleteAsync(long id);
-    Task<bool> ExistsAsync(long id);
 }
 
 

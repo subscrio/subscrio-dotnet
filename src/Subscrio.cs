@@ -11,7 +11,7 @@ using Subscrio.Core.Infrastructure.Repositories;
 namespace Subscrio.Core;
 
 /// <summary>
-/// Main Subscrio class - entry point for the library
+/// Entry point for the Subscrio library: schema lifecycle and domain services.
 /// </summary>
 public class Subscrio : IDisposable
 {
@@ -28,27 +28,38 @@ public class Subscrio : IDisposable
     private readonly ISubscriptionRepository _subscriptionRepo;
     private readonly IBillingCycleRepository _billingCycleRepo;
 
-    // Public services
+    /// <summary>Product create/update/list and feature association.</summary>
     public ProductManagementService Products { get; }
+    /// <summary>Feature catalog management.</summary>
     public FeatureManagementService Features { get; }
+    /// <summary>Plan management and plan feature values.</summary>
     public PlanManagementService Plans { get; }
+    /// <summary>Customer create/update/list and lifecycle.</summary>
     public CustomerManagementService Customers { get; }
+    /// <summary>Subscription create/update and period transitions.</summary>
     public SubscriptionManagementService Subscriptions { get; }
+    /// <summary>Billing cycle management for plans.</summary>
     public BillingCycleManagementService BillingCycles { get; }
+    /// <summary>Entitlement checks against active subscriptions.</summary>
     public FeatureCheckerService FeatureChecker { get; }
+    /// <summary>Optional Stripe event processing and sync helpers.</summary>
     public StripeIntegrationService Stripe { get; }
+    /// <summary>Declarative config sync for products, features, plans, and billing cycles.</summary>
     public ConfigSyncService ConfigSync { get; }
+    /// <summary>Before-mutation hook dispatcher registered from config.</summary>
     public HookDispatcher Hooks { get; }
 
+    /// <summary>
+    /// Creates a Subscrio instance from configuration (database, optional Stripe, hooks, initial config).
+    /// </summary>
+    /// <param name="config">Library configuration.</param>
     public Subscrio(SubscrioConfig config)
     {
-        // Initialize database
         var dbResult = DatabaseInitializer.InitializeDatabase(config.Database);
         _db = dbResult.DbContext;
         _dataSource = dbResult.DataSource;
         _installer = new SchemaInstaller(_db);
 
-        // Initialize repositories
         _productRepo = new EfProductRepository(_db);
         _featureRepo = new EfFeatureRepository(_db);
         _planRepo = new EfPlanRepository(_db);
@@ -59,7 +70,6 @@ public class Subscrio : IDisposable
         var hooks = new HookDispatcher(config.Hooks);
         Hooks = hooks;
 
-        // Initialize application services
         Products = new ProductManagementService(
             _productRepo,
             _featureRepo,

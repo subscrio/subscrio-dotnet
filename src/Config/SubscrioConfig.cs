@@ -17,11 +17,21 @@ public class InitialConfigOptions
     public ConfigSyncDto? Config { get; init; }
 }
 
+/// <summary>
+/// Top-level configuration for constructing <see cref="Subscrio"/>.
+/// </summary>
 public class SubscrioConfig
 {
+    /// <summary>Database connection and provider settings.</summary>
     public required DatabaseConfig Database { get; init; }
+
+    /// <summary>Optional passphrase for privileged schema operations (install/drop).</summary>
     public string? AdminPassphrase { get; init; }
+
+    /// <summary>Optional Stripe API and webhook settings.</summary>
     public StripeConfig? Stripe { get; init; }
+
+    /// <summary>Optional logging level for library diagnostics.</summary>
     public LoggingConfig? Logging { get; init; }
 
     /// <summary>
@@ -35,16 +45,30 @@ public class SubscrioConfig
     public SubscrioHooksOptions? Hooks { get; init; }
 }
 
+/// <summary>
+/// Database connection options used by Subscrio.
+/// </summary>
 public class DatabaseConfig
 {
+    /// <summary>EF Core / provider connection string.</summary>
     public required string ConnectionString { get; init; }
+
+    /// <summary>Whether to require SSL for the database connection.</summary>
     public bool Ssl { get; init; }
+
+    /// <summary>Connection pool size hint (default 10).</summary>
     public int PoolSize { get; init; } = 10;
+
+    /// <summary>Database provider (PostgreSQL or SQL Server).</summary>
     public DatabaseType DatabaseType { get; init; } = DatabaseType.PostgreSQL;
 }
 
+/// <summary>
+/// Stripe integration settings.
+/// </summary>
 public class StripeConfig
 {
+    /// <summary>Stripe secret API key.</summary>
     public required string SecretKey { get; init; }
 
     /// <summary>
@@ -73,11 +97,18 @@ public class StripeConfig
     }
 }
 
+/// <summary>
+/// Library logging options.
+/// </summary>
 public class LoggingConfig
 {
+    /// <summary>Minimum log level (default Info).</summary>
     public LogLevel Level { get; init; } = LogLevel.Info;
 }
 
+/// <summary>
+/// Supported library log levels.
+/// </summary>
 public enum LogLevel
 {
     Debug,

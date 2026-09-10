@@ -11,7 +11,6 @@ public interface IBillingCycleRepository
     Task<List<BillingCycleRecord>> FindByPlanAsync(long planId);
     Task<List<BillingCycleRecord>> FindAllAsync(BillingCycleFilterDto? filters = null);
     Task DeleteAsync(long id);
-    Task<bool> ExistsAsync(long id);
 }
 
 

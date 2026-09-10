@@ -43,22 +43,4 @@ public static class BillingCycleMapper
             record.Id
         );
     }
-
-    public static BillingCycleRecord ToPersistence(BillingCycle billingCycle)
-    {
-        return new BillingCycleRecord
-        {
-            Id = billingCycle.Id ?? 0,
-            PlanId = billingCycle.PlanId,
-            Key = billingCycle.Key,
-            DisplayName = billingCycle.DisplayName,
-            Description = billingCycle.Props.Description,
-            Status = billingCycle.Status.ToString().ToLowerInvariant(),
-            DurationValue = billingCycle.Props.DurationValue,
-            DurationUnit = billingCycle.Props.DurationUnit.ToString().ToLowerInvariant(),
-            ExternalProductId = billingCycle.Props.ExternalProductId,
-            CreatedAt = billingCycle.Props.CreatedAt,
-            UpdatedAt = billingCycle.Props.UpdatedAt
-        };
-    }
 }
