@@ -8,6 +8,8 @@ public interface ICustomerRepository
     Task<CustomerRecord> SaveAsync(CustomerRecord customer);
     Task<CustomerRecord?> FindByIdAsync(long id);
     Task<CustomerRecord?> FindByKeyAsync(string key);
+    Task<CustomerRecord?> FindByIdForUpdateAsync(long id);
+    Task<CustomerRecord?> FindByKeyForUpdateAsync(string key);
     Task<CustomerRecord?> FindByExternalBillingIdAsync(string externalBillingId);
     Task<List<CustomerRecord>> FindAllAsync(CustomerFilterDto? filters = null);
     Task DeleteAsync(long id);

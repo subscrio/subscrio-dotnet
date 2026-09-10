@@ -109,14 +109,14 @@ public class EfPlanRepository : IPlanRepository
                 _ => query
             };
 
-            if (filters.Limit > 0)
-            {
-                query = query.Take(filters.Limit);
-            }
-
             if (filters.Offset > 0)
             {
                 query = query.Skip(filters.Offset);
+            }
+
+            if (filters.Limit > 0)
+            {
+                query = query.Take(filters.Limit);
             }
         }
         else

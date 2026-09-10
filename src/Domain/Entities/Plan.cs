@@ -1,7 +1,6 @@
-using Subscrio.Core.Application.Errors;
+using Subscrio.Core.Domain.Errors;
 using Subscrio.Core.Domain.Base;
 using Subscrio.Core.Domain.ValueObjects;
-using Subscrio.Core.Infrastructure.Utils;
 
 namespace Subscrio.Core.Domain.Entities;
 
@@ -44,13 +43,13 @@ public class Plan : Entity<PlanProps>
     public void Archive()
     {
         Props.Status = PlanStatus.Archived;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unarchive()
     {
         Props.Status = PlanStatus.Active;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void SetFeatureValue(long featureId, string value)
@@ -59,7 +58,7 @@ public class Plan : Entity<PlanProps>
         if (existing != null)
         {
             existing.Value = value;
-            existing.UpdatedAt = DateHelper.Now();
+            existing.UpdatedAt = DateTime.UtcNow;
         }
         else
         {
@@ -67,17 +66,17 @@ public class Plan : Entity<PlanProps>
             {
                 FeatureId = featureId,
                 Value = value,
-                CreatedAt = DateHelper.Now(),
-                UpdatedAt = DateHelper.Now()
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             });
         }
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void RemoveFeatureValue(long featureId)
     {
         Props.FeatureValues.RemoveAll(fv => fv.FeatureId == featureId);
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public string? GetFeatureValue(long featureId)
@@ -98,6 +97,6 @@ public class Plan : Entity<PlanProps>
             throw new DomainException("Display name cannot be empty");
         }
         Props.DisplayName = name;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 }

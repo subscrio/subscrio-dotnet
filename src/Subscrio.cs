@@ -18,6 +18,7 @@ public class Subscrio : IDisposable
     private readonly SubscrioDbContext _db;
     private readonly SchemaInstaller _installer;
     private readonly Npgsql.NpgsqlDataSource? _dataSource;
+    private readonly string? _adminPassphrase;
 
     // Repositories (private)
     private readonly IProductRepository _productRepo;
@@ -135,6 +136,7 @@ public class Subscrio : IDisposable
             BillingCycles
         );
         _initialConfig = config.InitialConfig;
+        _adminPassphrase = config.AdminPassphrase;
     }
 
     private readonly InitialConfigOptions? _initialConfig;
@@ -157,9 +159,10 @@ public class Subscrio : IDisposable
     /// <summary>
     /// Install database schema
     /// </summary>
+    /// <param name="adminPassphrase">Optional passphrase. Defaults to <see cref="SubscrioConfig.AdminPassphrase"/> when omitted.</param>
     public async Task InstallSchemaAsync(string? adminPassphrase = null)
     {
-        await _installer.InstallAsync(adminPassphrase);
+        await _installer.InstallAsync(adminPassphrase ?? _adminPassphrase);
     }
 
     /// <summary>
@@ -185,11 +188,13 @@ public class Subscrio : IDisposable
     }
 
     /// <summary>
-    /// Drop all database tables (WARNING: Destructive!)
+    /// Drop all database tables (WARNING: Destructive!).
+    /// When an admin passphrase hash exists, the passphrase must match.
     /// </summary>
-    public async Task DropSchemaAsync()
+    /// <param name="adminPassphrase">Optional passphrase. Defaults to <see cref="SubscrioConfig.AdminPassphrase"/> when omitted.</param>
+    public async Task DropSchemaAsync(string? adminPassphrase = null)
     {
-        await _installer.DropSchemaAsync();
+        await _installer.DropSchemaAsync(adminPassphrase ?? _adminPassphrase);
     }
 
     /// <summary>

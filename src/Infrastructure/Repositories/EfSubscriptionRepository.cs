@@ -62,19 +62,21 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             {
                 query = query.Where(s => s.IsArchived == filters.IsArchived.Value);
             }
-
-            if (filters.Limit.HasValue && filters.Limit.Value > 0)
-            {
-                query = query.Take(filters.Limit.Value);
-            }
-
-            if (filters.Offset.HasValue && filters.Offset.Value > 0)
-            {
-                query = query.Skip(filters.Offset.Value);
-            }
         }
 
-        return await query.OrderByDescending(s => s.CreatedAt).ToListAsync();
+        query = query.OrderByDescending(s => s.CreatedAt);
+
+        if (filters?.Offset > 0)
+        {
+            query = query.Skip(filters.Offset.Value);
+        }
+
+        if (filters?.Limit > 0)
+        {
+            query = query.Take(filters.Limit.Value);
+        }
+
+        return await query.ToListAsync();
     }
 
     public async Task<SubscriptionStatusViewRecord?> FindByStripeIdAsync(string stripeSubscriptionId)
@@ -103,12 +105,25 @@ public class EfSubscriptionRepository : ISubscriptionRepository
 
             if (!string.IsNullOrEmpty(filters.PlanKey))
             {
-                // Join with plans to filter by planKey
                 query = query.Join(_db.Plans,
                     x => x.Subscription.PlanId,
                     p => p.Id,
                     (x, p) => new { x.Subscription, x.Customer, Plan = p })
                     .Where(x => x.Plan.Key == filters.PlanKey)
+                    .Select(x => new { x.Subscription, x.Customer });
+            }
+
+            if (!string.IsNullOrEmpty(filters.ProductKey))
+            {
+                query = query.Join(_db.Plans,
+                        x => x.Subscription.PlanId,
+                        p => p.Id,
+                        (x, p) => new { x.Subscription, x.Customer, Plan = p })
+                    .Join(_db.Products,
+                        x => x.Plan.ProductId,
+                        prod => prod.Id,
+                        (x, prod) => new { x.Subscription, x.Customer, Product = prod })
+                    .Where(x => x.Product.Key == filters.ProductKey)
                     .Select(x => new { x.Subscription, x.Customer });
             }
 
@@ -121,19 +136,139 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             {
                 query = query.Where(x => x.Subscription.IsArchived == filters.IsArchived.Value);
             }
+        }
 
-            if (filters.Limit.HasValue && filters.Limit.Value > 0)
+        query = query.OrderByDescending(x => x.Subscription.CreatedAt);
+
+        if (filters?.Offset > 0)
+        {
+            query = query.Skip(filters.Offset.Value);
+        }
+
+        if (filters?.Limit > 0)
+        {
+            query = query.Take(filters.Limit.Value);
+        }
+
+        var results = await query.ToListAsync();
+        return results.Select(x => new SubscriptionWithCustomerRecord(x.Subscription, x.Customer)).ToList();
+    }
+
+    public async Task<List<SubscriptionWithCustomerRecord>> FindDetailedAsync(
+        DetailedSubscriptionFilterDto filters,
+        Dictionary<string, object?>? resolvedFilters = null)
+    {
+        var query = _db.SubscriptionStatusView
+            .Join(_db.Customers,
+                s => s.CustomerId,
+                c => c.Id,
+                (s, c) => new { Subscription = s, Customer = c })
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(filters.CustomerKey))
+        {
+            query = query.Where(x => x.Customer.Key == filters.CustomerKey);
+        }
+
+        if (!string.IsNullOrEmpty(filters.PlanKey))
+        {
+            query = query.Join(_db.Plans,
+                    x => x.Subscription.PlanId,
+                    p => p.Id,
+                    (x, p) => new { x.Subscription, x.Customer, Plan = p })
+                .Where(x => x.Plan.Key == filters.PlanKey)
+                .Select(x => new { x.Subscription, x.Customer });
+        }
+
+        if (!string.IsNullOrEmpty(filters.ProductKey) ||
+            (resolvedFilters != null && resolvedFilters.TryGetValue("planIds", out var planIdsObj) && planIdsObj is List<long> { Count: > 0 }))
+        {
+            if (resolvedFilters != null && resolvedFilters.TryGetValue("planIds", out var idsObj) && idsObj is List<long> planIds && planIds.Count > 0)
             {
-                query = query.Take(filters.Limit.Value);
+                query = query.Where(x => planIds.Contains(x.Subscription.PlanId));
             }
-
-            if (filters.Offset.HasValue && filters.Offset.Value > 0)
+            else if (!string.IsNullOrEmpty(filters.ProductKey))
             {
-                query = query.Skip(filters.Offset.Value);
+                query = query.Join(_db.Plans,
+                        x => x.Subscription.PlanId,
+                        p => p.Id,
+                        (x, p) => new { x.Subscription, x.Customer, Plan = p })
+                    .Join(_db.Products,
+                        x => x.Plan.ProductId,
+                        prod => prod.Id,
+                        (x, prod) => new { x.Subscription, x.Customer, Product = prod })
+                    .Where(x => x.Product.Key == filters.ProductKey)
+                    .Select(x => new { x.Subscription, x.Customer });
             }
         }
 
-        var results = await query.OrderByDescending(x => x.Subscription.CreatedAt).ToListAsync();
+        if (!string.IsNullOrEmpty(filters.BillingCycleKey) ||
+            (resolvedFilters != null && resolvedFilters.TryGetValue("billingCycleId", out _)))
+        {
+            if (resolvedFilters != null && resolvedFilters.TryGetValue("billingCycleId", out var bcObj) && bcObj is long billingCycleId)
+            {
+                query = query.Where(x => x.Subscription.BillingCycleId == billingCycleId);
+            }
+            else if (!string.IsNullOrEmpty(filters.BillingCycleKey))
+            {
+                query = query.Join(_db.BillingCycles,
+                        x => x.Subscription.BillingCycleId,
+                        bc => bc.Id,
+                        (x, bc) => new { x.Subscription, x.Customer, BillingCycle = bc })
+                    .Where(x => x.BillingCycle.Key == filters.BillingCycleKey)
+                    .Select(x => new { x.Subscription, x.Customer });
+            }
+        }
+
+        if (!string.IsNullOrEmpty(filters.Status))
+        {
+            query = query.Where(x => x.Subscription.ComputedStatus.ToLower() == filters.Status.ToLower());
+        }
+
+        if (filters.IsArchived.HasValue)
+        {
+            query = query.Where(x => x.Subscription.IsArchived == filters.IsArchived.Value);
+        }
+
+        if (filters.ActivationDateFrom.HasValue)
+            query = query.Where(x => x.Subscription.ActivationDate >= filters.ActivationDateFrom.Value);
+        if (filters.ActivationDateTo.HasValue)
+            query = query.Where(x => x.Subscription.ActivationDate <= filters.ActivationDateTo.Value);
+        if (filters.ExpirationDateFrom.HasValue)
+            query = query.Where(x => x.Subscription.ExpirationDate >= filters.ExpirationDateFrom.Value);
+        if (filters.ExpirationDateTo.HasValue)
+            query = query.Where(x => x.Subscription.ExpirationDate <= filters.ExpirationDateTo.Value);
+        if (filters.TrialEndDateFrom.HasValue)
+            query = query.Where(x => x.Subscription.TrialEndDate >= filters.TrialEndDateFrom.Value);
+        if (filters.TrialEndDateTo.HasValue)
+            query = query.Where(x => x.Subscription.TrialEndDate <= filters.TrialEndDateTo.Value);
+        if (filters.CurrentPeriodStartFrom.HasValue)
+            query = query.Where(x => x.Subscription.CurrentPeriodStart >= filters.CurrentPeriodStartFrom.Value);
+        if (filters.CurrentPeriodStartTo.HasValue)
+            query = query.Where(x => x.Subscription.CurrentPeriodStart <= filters.CurrentPeriodStartTo.Value);
+        if (filters.CurrentPeriodEndFrom.HasValue)
+            query = query.Where(x => x.Subscription.CurrentPeriodEnd >= filters.CurrentPeriodEndFrom.Value);
+        if (filters.CurrentPeriodEndTo.HasValue)
+            query = query.Where(x => x.Subscription.CurrentPeriodEnd <= filters.CurrentPeriodEndTo.Value);
+
+        if (filters.HasStripeId == true)
+            query = query.Where(x => x.Subscription.StripeSubscriptionId != null && x.Subscription.StripeSubscriptionId != "");
+        else if (filters.HasStripeId == false)
+            query = query.Where(x => x.Subscription.StripeSubscriptionId == null || x.Subscription.StripeSubscriptionId == "");
+
+        if (filters.HasTrial == true)
+            query = query.Where(x => x.Subscription.TrialEndDate != null);
+        else if (filters.HasTrial == false)
+            query = query.Where(x => x.Subscription.TrialEndDate == null);
+
+        query = query.OrderByDescending(x => x.Subscription.CreatedAt);
+
+        if (filters.Offset > 0)
+            query = query.Skip(filters.Offset.Value);
+        if (filters.Limit > 0)
+            query = query.Take(filters.Limit.Value);
+
+        var results = await query.ToListAsync();
         return results.Select(x => new SubscriptionWithCustomerRecord(x.Subscription, x.Customer)).ToList();
     }
 

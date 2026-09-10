@@ -284,7 +284,7 @@ public class CustomersTests : IDisposable
                 ["DisplayName"] = "Delete Active Customer"
             });
 
-            await Assert.ThrowsAsync<ValidationException>(async () =>
+            await Assert.ThrowsAsync<DomainException>(async () =>
                 await _subscrio.Customers.DeleteCustomerAsync(customer.Key)
             );
         }
@@ -298,7 +298,7 @@ public class CustomersTests : IDisposable
             });
 
             // Don't archive the customer - keep it active
-            await Assert.ThrowsAsync<ValidationException>(async () =>
+            await Assert.ThrowsAsync<DomainException>(async () =>
                 await _subscrio.Customers.DeleteCustomerAsync(customer.Key)
             );
         }

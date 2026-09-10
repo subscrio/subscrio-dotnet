@@ -41,11 +41,12 @@ public class CreateFeatureDtoValidator : AbstractValidator<CreateFeatureDto>
         RuleFor(x => x)
             .Must(x =>
             {
-                if (x.ValueType == "toggle")
+                if (string.Equals(x.ValueType, "toggle", StringComparison.OrdinalIgnoreCase))
                 {
-                    return x.DefaultValue == "true" || x.DefaultValue == "false";
+                    return x.DefaultValue.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                           x.DefaultValue.Equals("false", StringComparison.OrdinalIgnoreCase);
                 }
-                if (x.ValueType == "numeric")
+                if (string.Equals(x.ValueType, "numeric", StringComparison.OrdinalIgnoreCase))
                 {
                     return double.TryParse(x.DefaultValue, out var num) && double.IsFinite(num);
                 }

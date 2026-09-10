@@ -378,5 +378,304 @@ public class SubscriptionsTests : IDisposable
             unarchived!.IsArchived.Should().BeFalse();
         }
     }
+
+    public class FilteringAndPartialUpdates : SubscriptionsTests
+    {
+        public FilteringAndPartialUpdates() : base() { }
+
+        [Fact]
+        public async Task FiltersSubscriptionsByCustomerKey()
+        {
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Filter By Customer Product"
+            });
+
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Filter By Customer Plan"
+            });
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Test Monthly",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+
+            var customerA = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Filter Customer A"
+            });
+            var customerB = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Filter Customer B"
+            });
+
+            var subA = await _fixtures.CreateSubscriptionAsync(
+                customerA.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-filter-a-{Guid.NewGuid():N}"
+                }
+            );
+            await _fixtures.CreateSubscriptionAsync(
+                customerB.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-filter-b-{Guid.NewGuid():N}"
+                }
+            );
+
+            var filtered = await _subscrio.Subscriptions.ListSubscriptionsAsync(new SubscriptionFilterDto(
+                CustomerKey: customerA.Key
+            ));
+
+            filtered.Should().NotBeEmpty();
+            filtered.Should().AllSatisfy(s => s.CustomerKey.Should().Be(customerA.Key));
+            filtered.Should().Contain(s => s.Key == subA.Key);
+            filtered.Should().NotContain(s => s.CustomerKey == customerB.Key);
+        }
+
+        [Fact]
+        public async Task PaginatesSubscriptionListSkipThenTake()
+        {
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Pagination Product"
+            });
+
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Pagination Plan"
+            });
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Test Monthly",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Pagination Customer"
+            });
+
+            for (var i = 0; i < 4; i++)
+            {
+                await _fixtures.CreateSubscriptionAsync(
+                    customer.Key,
+                    billingCycle.Key,
+                    new Dictionary<string, object>
+                    {
+                        ["Key"] = $"sub-page-{i}-{Guid.NewGuid():N}"
+                    }
+                );
+            }
+
+            var firstPage = await _subscrio.Subscriptions.ListSubscriptionsAsync(new SubscriptionFilterDto(
+                Limit: 2,
+                Offset: 0
+            ));
+            var secondPage = await _subscrio.Subscriptions.ListSubscriptionsAsync(new SubscriptionFilterDto(
+                Limit: 2,
+                Offset: 2
+            ));
+
+            firstPage.Should().HaveCount(2);
+            secondPage.Should().HaveCount(2);
+            firstPage.Select(s => s.Key).Should().NotIntersectWith(secondPage.Select(s => s.Key));
+        }
+
+        [Fact]
+        public async Task UpdateWithOnlyMetadataDoesNotClearTrialEndDate()
+        {
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Metadata Trial Customer"
+            });
+
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Metadata Trial Product"
+            });
+
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Metadata Trial Plan"
+            });
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Test Monthly",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+
+            var trialEnd = DateTime.UtcNow.AddDays(14);
+            var subscription = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-meta-trial-{Guid.NewGuid():N}",
+                    ["TrialEndDate"] = trialEnd
+                }
+            );
+
+            subscription.TrialEndDate.Should().NotBeNullOrEmpty();
+            var originalTrialEnd = subscription.TrialEndDate;
+
+            var updated = await _subscrio.Subscriptions.UpdateSubscriptionAsync(subscription.Key, new UpdateSubscriptionDto(
+                Metadata: new Dictionary<string, object?> { ["note"] = "metadata-only" }
+            ));
+
+            updated.Metadata.Should().ContainKey("note");
+            updated.TrialEndDate.Should().Be(originalTrialEnd);
+        }
+
+        [Fact]
+        public async Task UpdateWithClearTrialEndDateClearsTrialEndDate()
+        {
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Clear Trial Customer"
+            });
+
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Clear Trial Product"
+            });
+
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Clear Trial Plan"
+            });
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Test Monthly",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+
+            var subscription = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-clear-trial-{Guid.NewGuid():N}",
+                    ["TrialEndDate"] = DateTime.UtcNow.AddDays(14)
+                }
+            );
+
+            subscription.TrialEndDate.Should().NotBeNullOrEmpty();
+
+            var updated = await _subscrio.Subscriptions.UpdateSubscriptionAsync(subscription.Key, new UpdateSubscriptionDto(
+                ClearTrialEndDate: true
+            ));
+
+            updated.TrialEndDate.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task GetSubscriptionWithFutureCancellationDateReturnsCancellationPending()
+        {
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Cancel Pending Customer"
+            });
+
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Cancel Pending Product"
+            });
+
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Cancel Pending Plan"
+            });
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Test Monthly",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+
+            var subscription = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-cancel-pending-{Guid.NewGuid():N}"
+                }
+            );
+
+            await _subscrio.Subscriptions.UpdateSubscriptionAsync(subscription.Key, new UpdateSubscriptionDto(
+                CancellationDate: DateTime.UtcNow.AddDays(30)
+            ));
+
+            var retrieved = await _subscrio.Subscriptions.GetSubscriptionAsync(subscription.Key);
+            retrieved.Should().NotBeNull();
+            retrieved!.Status.Should().Be("cancellation_pending");
+        }
+
+        [Fact]
+        public async Task FindSubscriptionsWithHasTrialReturnsOnlyTrialSubscriptions()
+        {
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Has Trial Product"
+            });
+
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Has Trial Plan"
+            });
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Test Monthly",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Has Trial Customer"
+            });
+
+            var withTrial = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-with-trial-{Guid.NewGuid():N}",
+                    ["TrialEndDate"] = DateTime.UtcNow.AddDays(7)
+                }
+            );
+            var withoutTrial = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-no-trial-{Guid.NewGuid():N}"
+                }
+            );
+
+            var found = await _subscrio.Subscriptions.FindSubscriptionsAsync(new DetailedSubscriptionFilterDto(
+                CustomerKey: customer.Key,
+                HasTrial: true
+            ));
+
+            found.Should().Contain(s => s.Key == withTrial.Key);
+            found.Should().NotContain(s => s.Key == withoutTrial.Key);
+            found.Should().AllSatisfy(s => s.TrialEndDate.Should().NotBeNullOrEmpty());
+        }
+    }
 }
 

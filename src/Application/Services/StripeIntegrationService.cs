@@ -160,13 +160,11 @@ public class StripeIntegrationService
                 billingCycle.Props.ExternalProductId!
             );
             
-            // Convert back to record and save
-            var updatedRecord = SubscriptionMapper.ToPersistence(existingSubscriptionEntity);
-            updatedRecord.Id = existingSubscriptionRecord.Id; // Preserve ID
+            ApplySubscriptionEntityToRecord(existingSubscriptionRecord, existingSubscriptionEntity);
             await SaveSubscriptionWithHooksAsync(
                 HookEvents.SubscriptionUpdatedBefore,
                 HookEvents.SubscriptionUpdatedAfter,
-                updatedRecord,
+                existingSubscriptionRecord,
                 existingSubscriptionEntity,
                 oldDto);
             return;
@@ -215,13 +213,11 @@ public class StripeIntegrationService
                 billingCycle.Props.ExternalProductId!
             );
             
-            // Convert back to record and save
-            var updatedRecord2 = SubscriptionMapper.ToPersistence(subscriptionEntity2);
-            updatedRecord2.Id = subscriptionRecord2.Id; // Preserve ID
+            ApplySubscriptionEntityToRecord(subscriptionRecord2, subscriptionEntity2);
             await SaveSubscriptionWithHooksAsync(
                 HookEvents.SubscriptionUpdatedBefore,
                 HookEvents.SubscriptionUpdatedAfter,
-                updatedRecord2,
+                subscriptionRecord2,
                 subscriptionEntity2,
                 oldDto2);
             return;
@@ -332,13 +328,11 @@ public class StripeIntegrationService
             billingCycle.Props.ExternalProductId!
         );
         
-        // Convert back to record and save
-        var updatedRecord = SubscriptionMapper.ToPersistence(subscriptionEntity);
-        updatedRecord.Id = subscriptionRecord.Id; // Preserve ID
+        ApplySubscriptionEntityToRecord(subscriptionRecord, subscriptionEntity);
         await SaveSubscriptionWithHooksAsync(
             HookEvents.SubscriptionUpdatedBefore,
             HookEvents.SubscriptionUpdatedAfter,
-            updatedRecord,
+            subscriptionRecord,
             subscriptionEntity,
             oldDto);
     }
@@ -379,13 +373,11 @@ public class StripeIntegrationService
 
         subscriptionEntity.Expire();
         
-        // Convert back to record and save
-        var updatedRecord = SubscriptionMapper.ToPersistence(subscriptionEntity);
-        updatedRecord.Id = subscriptionRecord.Id; // Preserve ID
+        ApplySubscriptionEntityToRecord(subscriptionRecord, subscriptionEntity);
         await SaveSubscriptionWithHooksAsync(
             HookEvents.SubscriptionUpdatedBefore,
             HookEvents.SubscriptionUpdatedAfter,
-            updatedRecord,
+            subscriptionRecord,
             subscriptionEntity,
             oldDto);
     }
@@ -460,13 +452,11 @@ public class StripeIntegrationService
 
         subscriptionEntity.Props.UpdatedAt = DateHelper.Now();
         
-        // Convert back to record and save
-        var updatedRecord = SubscriptionMapper.ToPersistence(subscriptionEntity);
-        updatedRecord.Id = subscriptionRecord.Id; // Preserve ID
+        ApplySubscriptionEntityToRecord(subscriptionRecord, subscriptionEntity);
         await SaveSubscriptionWithHooksAsync(
             HookEvents.SubscriptionUpdatedBefore,
             HookEvents.SubscriptionUpdatedAfter,
-            updatedRecord,
+            subscriptionRecord,
             subscriptionEntity,
             oldDto);
     }
@@ -489,80 +479,21 @@ public class StripeIntegrationService
     }
 
     /// <summary>
-    /// Create Stripe subscription from Subscrio data
+    /// Obsolete: creating Stripe subscriptions directly from Subscrio is not supported.
+    /// Use <see cref="CreateCheckoutSessionAsync"/> to start Checkout, or
+    /// <see cref="ProcessStripeEventAsync"/> to sync webhook events.
     /// </summary>
-    public async Task<SubscriptionEntity> CreateStripeSubscriptionAsync(
+    [Obsolete("Use ProcessStripeEventAsync or CreateCheckoutSessionAsync instead.")]
+    public Task<SubscriptionEntity> CreateStripeSubscriptionAsync(
         string customerKey,
         string planKey,
         string billingCycleKey,
         string stripePriceId)
     {
-        var customer = await CustomerRepository.FindByKeyAsync(customerKey);
-        if (customer == null)
-        {
-            throw new NotFoundException($"Customer with key '{customerKey}' not found");
-        }
-
-        if (string.IsNullOrEmpty(customer.ExternalBillingId))
-        {
-            throw new ValidationException("Customer must have external billing ID for Stripe integration");
-        }
-
-        var plan = await PlanRepository.FindByKeyAsync(planKey);
-        if (plan == null)
-        {
-            throw new NotFoundException($"Plan with key '{planKey}' not found");
-        }
-
-        var billingCycle = await BillingCycleRepository.FindByKeyAsync(billingCycleKey);
-        if (billingCycle == null)
-        {
-            throw new NotFoundException($"Billing cycle with key '{billingCycleKey}' not found");
-        }
-
-        // Convert billing cycle to domain entity for CalculateNextPeriodEnd
-        var billingCycleEntity = BillingCycleMapper.ToDomain(billingCycle);
-        
-        // This would integrate with Stripe SDK to create the subscription
-        // For now, creating a placeholder subscription
-        var subscription = new SubscriptionEntity(
-            new SubscriptionProps
-            {
-                Key = GenerateKey("sub"),
-                CustomerId = customer.Id,
-                PlanId = plan.Id,
-                BillingCycleId = billingCycle.Id,
-                Status = SubscriptionStatus.Active,
-                IsArchived = false,
-                ActivationDate = DateHelper.Now(),
-                CurrentPeriodStart = DateHelper.Now(),
-                CurrentPeriodEnd = billingCycleEntity.CalculateNextPeriodEnd(DateHelper.Now()),
-                StripeSubscriptionId = $"sub_placeholder_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
-                FeatureOverrides = new List<FeatureOverride>(),
-                CreatedAt = DateHelper.Now(),
-                UpdatedAt = DateHelper.Now()
-            }
-        );
-
-        // Convert to record and save
-        var subscriptionRecord = SubscriptionMapper.ToPersistence(subscription);
-        var savedSubscriptionRecord = await SaveSubscriptionWithHooksAsync(
-            HookEvents.SubscriptionCreatedBefore,
-            HookEvents.SubscriptionCreatedAfter,
-            subscriptionRecord,
-            subscription,
-            null);
-        
-        // Convert back to domain entity for return
-        var featureOverrides = await SubscriptionRepository.GetFeatureOverridesAsync(savedSubscriptionRecord.Id);
-        var overrideList = featureOverrides.Select(fo => new FeatureOverride
-        {
-            FeatureId = fo.FeatureId,
-            Value = fo.Value,
-            Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-            CreatedAt = fo.CreatedAt
-        }).ToList();
-        return SubscriptionMapper.ToDomain(savedSubscriptionRecord, overrideList);
+        throw new NotSupportedException(
+            "CreateStripeSubscriptionAsync is not supported. " +
+            "Use CreateCheckoutSessionAsync to start a Stripe Checkout session, " +
+            "or ProcessStripeEventAsync to sync verified Stripe webhook events into Subscrio.");
     }
 
     private async Task<CustomerEntity> ResolveCustomerAsync(
@@ -588,7 +519,7 @@ public class StripeIntegrationService
             );
         }
 
-        var fallbackCustomerRecord = await CustomerRepository.FindByKeyAsync(customerKey);
+        var fallbackCustomerRecord = await CustomerRepository.FindByKeyForUpdateAsync(customerKey);
         if (fallbackCustomerRecord == null)
         {
             throw new NotFoundException(
@@ -596,7 +527,7 @@ public class StripeIntegrationService
             );
         }
 
-        // Convert to domain entity, set external billing ID, convert back and save
+        // Convert to domain entity, set external billing ID, mutate tracked record and save
         var fallbackCustomer = CustomerMapper.ToDomain(fallbackCustomerRecord);
         fallbackCustomer.SetExternalBillingId(stripeCustomerId);
         var savedRecord = await SaveCustomerWithHooksAsync(fallbackCustomerRecord, fallbackCustomer);
@@ -738,7 +669,8 @@ public class StripeIntegrationService
             "past_due" or "unpaid" => SubscriptionStatus.CancellationPending,
             "incomplete" => SubscriptionStatus.Pending,
             "incomplete_expired" => SubscriptionStatus.Expired,
-            _ => SubscriptionStatus.Active
+            "paused" => SubscriptionStatus.Pending,
+            _ => throw new ValidationException($"Unsupported Stripe subscription status '{status}'")
         };
     }
 
@@ -793,13 +725,19 @@ public class StripeIntegrationService
             return;
         }
 
-        var existingRecord = await CustomerRepository.FindByExternalBillingIdAsync(stripeCustomer.Id);
+        var existingLookup = await CustomerRepository.FindByExternalBillingIdAsync(stripeCustomer.Id);
+        if (existingLookup == null)
+        {
+            return;
+        }
+
+        var existingRecord = await CustomerRepository.FindByIdForUpdateAsync(existingLookup.Id);
         if (existingRecord == null)
         {
             return;
         }
 
-        // Convert to domain entity, update, convert back and save
+        // Convert to domain entity, update, mutate tracked record and save
         var existing = CustomerMapper.ToDomain(existingRecord);
         existing.SetExternalBillingId(null);
         await SaveCustomerWithHooksAsync(existingRecord, existing);
@@ -924,7 +862,9 @@ public class StripeIntegrationService
             var stripeCustomer = await customerService.CreateAsync(createOptions);
             stripeCustomerId = stripeCustomer.Id;
             customerEntity.SetExternalBillingId(stripeCustomerId);
-            await SaveCustomerWithHooksAsync(customer, customerEntity);
+            var trackedCustomer = await CustomerRepository.FindByKeyForUpdateAsync(customer.Key)
+                ?? throw new NotFoundException($"Customer with key '{customerKey}' not found for update");
+            await SaveCustomerWithHooksAsync(trackedCustomer, customerEntity);
         }
         else
         {
@@ -955,7 +895,9 @@ public class StripeIntegrationService
                 var stripeCustomer = await customerService.CreateAsync(createOptions);
                 stripeCustomerId = stripeCustomer.Id;
                 customerEntity.SetExternalBillingId(stripeCustomerId);
-                await SaveCustomerWithHooksAsync(customer, customerEntity);
+                var trackedCustomer = await CustomerRepository.FindByKeyForUpdateAsync(customer.Key)
+                    ?? throw new NotFoundException($"Customer with key '{customerKey}' not found for update");
+                await SaveCustomerWithHooksAsync(trackedCustomer, customerEntity);
             }
         }
 
@@ -1055,6 +997,25 @@ public class StripeIntegrationService
         return $"{prefix}_{shortId}";
     }
 
+    private static void ApplySubscriptionEntityToRecord(SubscriptionRecord record, SubscriptionEntity subscription)
+    {
+        record.Key = subscription.Key;
+        record.CustomerId = subscription.Props.CustomerId;
+        record.PlanId = subscription.Props.PlanId;
+        record.BillingCycleId = subscription.Props.BillingCycleId;
+        record.IsArchived = subscription.Props.IsArchived;
+        record.ActivationDate = subscription.Props.ActivationDate;
+        record.ExpirationDate = subscription.Props.ExpirationDate;
+        record.CancellationDate = subscription.Props.CancellationDate;
+        record.TrialEndDate = subscription.Props.TrialEndDate;
+        record.CurrentPeriodStart = subscription.Props.CurrentPeriodStart;
+        record.CurrentPeriodEnd = subscription.Props.CurrentPeriodEnd;
+        record.StripeSubscriptionId = subscription.Props.StripeSubscriptionId;
+        record.Metadata = subscription.Props.Metadata;
+        record.UpdatedAt = subscription.Props.UpdatedAt;
+        record.TransitionedAt = subscription.Props.TransitionedAt;
+    }
+
     private async Task<CustomerRecord> SaveCustomerWithHooksAsync(CustomerRecord existingRecord, CustomerEntity customer)
     {
         var oldDto = CustomerMapper.ToDto(CustomerMapper.ToDomain(existingRecord));
@@ -1067,11 +1028,10 @@ public class StripeIntegrationService
             oldDto,
             newDto) ?? newDto;
 
-        var updatedRecord = CustomerMapper.ToPersistence(customer);
-        updatedRecord.Id = existingRecord.Id;
-        ApplyCustomerDtoMutation.Apply(updatedRecord, proposed, allowKeyChange: false);
+        // Mutate the tracked EF record — never SaveAsync a detached ToPersistence() instance
+        ApplyCustomerDtoMutation.Apply(existingRecord, proposed, allowKeyChange: false);
 
-        var saved = await CustomerRepository.SaveAsync(updatedRecord);
+        var saved = await CustomerRepository.SaveAsync(existingRecord);
         await _hooks.EmitCustomerAfterAsync(
             HookEvents.CustomerUpdatedAfter,
             HookSource.Stripe,

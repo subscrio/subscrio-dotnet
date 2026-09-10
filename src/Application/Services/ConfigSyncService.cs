@@ -75,11 +75,11 @@ public class ConfigSyncService
             Warnings: new List<ConfigSyncWarning>()
         );
 
-        // Phase 2: Load Current State
-        var existingProducts = await Products.ListProductsAsync(new ProductFilterDto { Limit = 100, Offset = 0, SortOrder = "asc" });
-        var existingFeatures = await Features.ListFeaturesAsync(new FeatureFilterDto { Limit = 100, Offset = 0 });
-        var existingPlans = await Plans.ListPlansAsync(new PlanFilterDto { Limit = 100, Offset = 0, SortOrder = "asc" });
-        var existingBillingCycles = await BillingCycles.ListBillingCyclesAsync(new BillingCycleFilterDto { Limit = 100, Offset = 0, SortOrder = "asc" });
+        // Phase 2: Load Current State (page through all entities — list APIs cap at Limit 100)
+        var existingProducts = await ListAllProductsAsync();
+        var existingFeatures = await ListAllFeaturesAsync();
+        var existingPlans = await ListAllPlansAsync();
+        var existingBillingCycles = await ListAllBillingCyclesAsync();
 
         // Create lookup maps by key
         var productsByKey = existingProducts.ToDictionary(p => p.Key, p => p);
@@ -391,16 +391,22 @@ public class ConfigSyncService
                         
                         if (needsUpdate)
                         {
+                            var shouldClearTransition = transitionBillingCycleKey == null &&
+                                !string.IsNullOrEmpty(existing.OnExpireTransitionToBillingCycleKey);
+
                             var updateDto = new UpdatePlanDto(
                                 DisplayName: planConfig.DisplayName,
                                 Description: planConfig.Description,
                                 OnExpireTransitionToBillingCycleKey: transitionBillingCycleExistsInDb ? transitionBillingCycleKey : null,
+                                ClearOnExpireTransitionToBillingCycleKey: shouldClearTransition,
                                 Metadata: planConfig.Metadata
                             );
                             
                             // Only update if there are fields to update
                             if (updateDto.DisplayName != null || updateDto.Description != null || 
-                                updateDto.OnExpireTransitionToBillingCycleKey != null || updateDto.Metadata != null)
+                                updateDto.OnExpireTransitionToBillingCycleKey != null ||
+                                updateDto.ClearOnExpireTransitionToBillingCycleKey ||
+                                updateDto.Metadata != null)
                             {
                                 await Plans.UpdatePlanAsync(planConfig.Key, updateDto);
                                 report = report with
@@ -620,10 +626,9 @@ public class ConfigSyncService
                 var billingCycle = await BillingCycles.GetBillingCycleAsync(transitionKey);
                 if (billingCycle != null)
                 {
-                    await Plans.UpdatePlanAsync(planKey, new UpdatePlanDto
-                    {
-                        OnExpireTransitionToBillingCycleKey = transitionKey
-                    });
+                    await Plans.UpdatePlanAsync(planKey, new UpdatePlanDto(
+                        OnExpireTransitionToBillingCycleKey: transitionKey
+                    ));
                 }
                 else
                 {
@@ -648,6 +653,85 @@ public class ConfigSyncService
     }
 
     // Helper methods
+    private async Task<List<ProductDto>> ListAllProductsAsync()
+    {
+        var all = new List<ProductDto>();
+        const int pageSize = 100;
+        var offset = 0;
+        while (true)
+        {
+            var page = await Products.ListProductsAsync(new ProductFilterDto
+            {
+                Limit = pageSize,
+                Offset = offset,
+                SortOrder = "asc"
+            });
+            all.AddRange(page);
+            if (page.Count < pageSize) break;
+            offset += pageSize;
+        }
+        return all;
+    }
+
+    private async Task<List<FeatureDto>> ListAllFeaturesAsync()
+    {
+        var all = new List<FeatureDto>();
+        const int pageSize = 100;
+        var offset = 0;
+        while (true)
+        {
+            var page = await Features.ListFeaturesAsync(new FeatureFilterDto
+            {
+                Limit = pageSize,
+                Offset = offset
+            });
+            all.AddRange(page);
+            if (page.Count < pageSize) break;
+            offset += pageSize;
+        }
+        return all;
+    }
+
+    private async Task<List<PlanDto>> ListAllPlansAsync()
+    {
+        var all = new List<PlanDto>();
+        const int pageSize = 100;
+        var offset = 0;
+        while (true)
+        {
+            var page = await Plans.ListPlansAsync(new PlanFilterDto
+            {
+                Limit = pageSize,
+                Offset = offset,
+                SortOrder = "asc"
+            });
+            all.AddRange(page);
+            if (page.Count < pageSize) break;
+            offset += pageSize;
+        }
+        return all;
+    }
+
+    private async Task<List<BillingCycleDto>> ListAllBillingCyclesAsync()
+    {
+        var all = new List<BillingCycleDto>();
+        const int pageSize = 100;
+        var offset = 0;
+        while (true)
+        {
+            var page = await BillingCycles.ListBillingCyclesAsync(new BillingCycleFilterDto
+            {
+                Limit = pageSize,
+                Offset = offset,
+                SortOrder = "asc"
+            });
+            all.AddRange(page);
+            if (page.Count < pageSize) break;
+            offset += pageSize;
+        }
+        return all;
+    }
+
     private static bool DeepEqual(object? a, object? b)
     {
         if (ReferenceEquals(a, b)) return true;

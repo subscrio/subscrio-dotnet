@@ -83,12 +83,38 @@ public class CustomerManagementService
             proposed) ?? proposed;
         ApplyCustomerDtoMutation.Apply(record, proposed, allowKeyChange: true);
 
+        // Re-validate after before-hook mutations
+        var revalidateDto = new CreateCustomerDto(
+            record.Key,
+            record.DisplayName,
+            record.Email,
+            record.ExternalBillingId,
+            record.Metadata);
+        var revalidation = await _createValidator.ValidateAsync(revalidateDto);
+        if (!revalidation.IsValid)
+        {
+            throw new ValidationException(
+                "Invalid customer data after hook mutation",
+                revalidation.Errors
+            );
+        }
+
         if (record.Key != dto.Key)
         {
             var keyTaken = await _customerRepository.FindByKeyAsync(record.Key);
             if (keyTaken != null)
             {
                 throw new ConflictException($"Customer with key '{record.Key}' already exists");
+            }
+        }
+
+        if (record.ExternalBillingId != null &&
+            record.ExternalBillingId != dto.ExternalBillingId)
+        {
+            var existingBilling = await _customerRepository.FindByExternalBillingIdAsync(record.ExternalBillingId);
+            if (existingBilling != null)
+            {
+                throw new ConflictException($"Customer with external billing ID '{record.ExternalBillingId}' already exists");
             }
         }
 
@@ -281,7 +307,7 @@ public class CustomerManagementService
         var customer = CustomerMapper.ToDomain(record);
         if (!customer.CanDelete())
         {
-            throw new ValidationException(
+            throw new DomainException(
                 $"Cannot delete customer with status '{customer.Status}'. " +
                 "Customer must be archived before permanent deletion."
             );

@@ -43,6 +43,18 @@ public class EfCustomerRepository : ICustomerRepository
             .FirstOrDefaultAsync(c => c.Key == key);
     }
 
+    public async Task<CustomerRecord?> FindByIdForUpdateAsync(long id)
+    {
+        return await _db.Customers
+            .FirstOrDefaultAsync(c => c.Id == id);
+    }
+
+    public async Task<CustomerRecord?> FindByKeyForUpdateAsync(string key)
+    {
+        return await _db.Customers
+            .FirstOrDefaultAsync(c => c.Key == key);
+    }
+
     public async Task<CustomerRecord?> FindByExternalBillingIdAsync(string externalBillingId)
     {
         return await _db.Customers
@@ -86,14 +98,14 @@ public class EfCustomerRepository : ICustomerRepository
                     : query.OrderBy(c => c.CreatedAt)
             };
 
-            if (filters.Limit > 0)
-            {
-                query = query.Take(filters.Limit);
-            }
-
             if (filters.Offset > 0)
             {
                 query = query.Skip(filters.Offset);
+            }
+
+            if (filters.Limit > 0)
+            {
+                query = query.Take(filters.Limit);
             }
         }
         else

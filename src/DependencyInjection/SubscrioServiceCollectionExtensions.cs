@@ -11,8 +11,11 @@ public static class SubscrioServiceCollectionExtensions
 {
     /// <summary>
     /// Registers Subscrio in the service collection with the specified lifetime.
-    /// If <paramref name="config"/> has <see cref="SubscrioConfig.InitialConfig"/> set,
-    /// runs config sync once during this call (after ensuring schema exists).
+    /// Does not install schema or run <see cref="SubscrioConfig.InitialConfig"/> sync.
+    /// When <see cref="SubscrioConfig.InitialConfig"/> is set, call
+    /// <see cref="Subscrio.InstallSchemaAsync"/> (if needed) and
+    /// <see cref="Subscrio.RunInitialConfigSyncAsync"/> explicitly after building the host
+    /// to avoid sync-over-async deadlocks during DI registration.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="config">Subscrio configuration (database, optional Stripe, optional InitialConfig, etc.).</param>
@@ -23,11 +26,6 @@ public static class SubscrioServiceCollectionExtensions
         SubscrioConfig config,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
     {
-        if (config.InitialConfig != null)
-        {
-            RunInitialConfigSyncOnce(config);
-        }
-
         var descriptor = ServiceDescriptor.Describe(
             typeof(Subscrio),
             _ => new Subscrio(config),
@@ -35,16 +33,5 @@ public static class SubscrioServiceCollectionExtensions
 
         services.Add(descriptor);
         return services;
-    }
-
-    private static void RunInitialConfigSyncOnce(SubscrioConfig config)
-    {
-        using var subscrio = new Subscrio(config);
-        var schemaVersion = subscrio.VerifySchemaAsync().GetAwaiter().GetResult();
-        if (schemaVersion == null)
-        {
-            subscrio.InstallSchemaAsync().GetAwaiter().GetResult();
-        }
-        subscrio.RunInitialConfigSyncAsync().GetAwaiter().GetResult();
     }
 }

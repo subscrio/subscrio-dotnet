@@ -1,11 +1,8 @@
 using System.Text.Json;
-using System.Reflection;
 using System.Text.Json.Serialization;
-using Microsoft.EntityFrameworkCore;
 using Subscrio.Core;
 using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Domain.ValueObjects;
-using Subscrio.Core.Infrastructure.Database;
 using Subscrio.Sample;
 using SubscrioInstance = Subscrio.Core.Subscrio;
 
@@ -610,7 +607,8 @@ async Task RunPhase3_TrialToPurchaseAsync(SubscrioInstance subscrio)
     Console.WriteLine("))");
 
     await subscrio.Subscriptions.UpdateSubscriptionAsync("acme-subscription", new UpdateSubscriptionDto(
-        TrialEndDate: null // Clear trial end date to convert to active
+        TrialEndDate: null, // Clear trial end date to convert to active
+        ClearTrialEndDate: true
     ));
 
     PrintSuccess("Trial subscription converted to active paid subscription");
@@ -913,7 +911,7 @@ async Task RunPhase7_DowngradeToFreeAsync(SubscrioInstance subscrio)
 
 async Task RunPhase8_SummaryAsync()
 {
-    PrintPhase(7, "Summary");
+    PrintPhase(8, "Summary");
 
     Console.WriteLine("🎉 Demo completed successfully!");
     Console.WriteLine("");
@@ -1081,66 +1079,96 @@ async Task<string> PromptDemoStartAsync(bool automated = false)
 
 async Task CleanupDemoEntitiesAsync(SubscrioInstance subscrio)
 {
-    // Access the private _db field via reflection (similar to TypeScript's (subscrio as any).db)
-    var dbField = typeof(SubscrioInstance).GetField("_db", BindingFlags.NonPublic | BindingFlags.Instance);
-    if (dbField == null)
-    {
-        Console.WriteLine("⚠️  Warning: Could not access database context for cleanup");
-        return;
-    }
-
-    var db = (SubscrioDbContext)dbField.GetValue(subscrio)!;
-
     Console.WriteLine("🧹 Cleaning up existing demo entities...");
 
-    // Helper function to safely delete (suppresses errors for missing tables or 0 rows)
-    async Task SafeDeleteAsync(string sql, string description)
+    async Task TryAsync(Func<Task> action, string description)
     {
         try
         {
-            await db.Database.ExecuteSqlRawAsync(sql);
+            await action();
         }
         catch (Exception error)
         {
-            // Suppress errors for expected scenarios:
-            // - Table doesn't exist (--recreate case)
-            // - 0 rows affected (empty tables, normal case)
-            var errorString = error.ToString().ToLowerInvariant();
+            var message = error.Message ?? "";
             var isExpected =
-                errorString.Contains("does not exist") ||
-                errorString.Contains("relation") ||
-                errorString.Contains("0 rows") ||
-                errorString.Contains("no rows");
+                message.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("does not exist", StringComparison.OrdinalIgnoreCase);
 
             if (!isExpected)
             {
-                // Only log unexpected errors
                 Console.WriteLine($"⚠️  Warning: {description} failed: {error.Message}");
             }
         }
     }
 
-    // Delete in reverse dependency order
-    // Note: These may affect 0 rows or fail if tables don't exist (when using --recreate)
     Console.WriteLine("🗑️  Deleting demo entities...");
-    await SafeDeleteAsync(
-        "DELETE FROM subscrio.subscriptions WHERE key IN ('acme-subscription', 'acme-free-subscription')",
-        "Deleting subscriptions"
-    );
-    await SafeDeleteAsync("DELETE FROM subscrio.customers WHERE key = 'acme-corp'", "Deleting customers");
-    await SafeDeleteAsync(
-        "DELETE FROM subscrio.billing_cycles WHERE key IN ('free-forever', 'starter-monthly', 'starter-annual', 'professional-monthly', 'professional-annual', 'enterprise-monthly', 'enterprise-annual')",
-        "Deleting billing cycles"
-    );
-    await SafeDeleteAsync(
-        "DELETE FROM subscrio.plans WHERE key IN ('free', 'starter', 'professional', 'enterprise')",
-        "Deleting plans"
-    );
-    await SafeDeleteAsync(
-        "DELETE FROM subscrio.features WHERE key IN ('max-projects', 'max-users-per-project', 'gantt-charts', 'custom-branding', 'api-access')",
-        "Deleting features"
-    );
-    await SafeDeleteAsync("DELETE FROM subscrio.products WHERE key = 'projecthub'", "Deleting products");
+
+    foreach (var key in new[] { "acme-subscription", "acme-free-subscription" })
+    {
+        await TryAsync(
+            () => subscrio.Subscriptions.DeleteSubscriptionAsync(key),
+            $"Deleting subscription '{key}'");
+    }
+
+    await TryAsync(async () =>
+    {
+        await subscrio.Customers.ArchiveCustomerAsync("acme-corp");
+        await subscrio.Customers.DeleteCustomerAsync("acme-corp");
+    }, "Deleting customer 'acme-corp'");
+
+    foreach (var key in new[]
+    {
+        "free-forever", "starter-monthly", "starter-annual",
+        "professional-monthly", "professional-annual",
+        "enterprise-monthly", "enterprise-annual"
+    })
+    {
+        await TryAsync(async () =>
+        {
+            await subscrio.BillingCycles.ArchiveBillingCycleAsync(key);
+            await subscrio.BillingCycles.DeleteBillingCycleAsync(key);
+        }, $"Deleting billing cycle '{key}'");
+    }
+
+    foreach (var planKey in new[] { "free", "starter", "professional", "enterprise" })
+    {
+        foreach (var featureKey in new[]
+        {
+            "max-projects", "max-users-per-project", "gantt-charts", "custom-branding", "api-access"
+        })
+        {
+            await TryAsync(
+                () => subscrio.Plans.RemoveFeatureValueAsync(planKey, featureKey),
+                $"Removing plan feature '{planKey}/{featureKey}'");
+        }
+
+        await TryAsync(async () =>
+        {
+            await subscrio.Plans.ArchivePlanAsync(planKey);
+            await subscrio.Plans.DeletePlanAsync(planKey);
+        }, $"Deleting plan '{planKey}'");
+    }
+
+    foreach (var featureKey in new[]
+    {
+        "max-projects", "max-users-per-project", "gantt-charts", "custom-branding", "api-access"
+    })
+    {
+        await TryAsync(
+            () => subscrio.Products.DissociateFeatureAsync("projecthub", featureKey),
+            $"Dissociating feature '{featureKey}'");
+        await TryAsync(async () =>
+        {
+            await subscrio.Features.ArchiveFeatureAsync(featureKey);
+            await subscrio.Features.DeleteFeatureAsync(featureKey);
+        }, $"Deleting feature '{featureKey}'");
+    }
+
+    await TryAsync(async () =>
+    {
+        await subscrio.Products.ArchiveProductAsync("projecthub");
+        await subscrio.Products.DeleteProductAsync("projecthub");
+    }, "Deleting product 'projecthub'");
 
     Console.WriteLine("✅ Demo entities cleanup completed");
     Console.WriteLine(new string('═', 50) + "\n");

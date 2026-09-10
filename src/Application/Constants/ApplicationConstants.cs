@@ -30,9 +30,6 @@ public static class ApplicationConstants
     // Subscription limits
     public const int MaxSubscriptionsPerCustomer = 100;
 
-    // Cache settings
-    public const int PlanCacheSize = 1000;
-
     // Performance settings
     public const int BatchSize = 50;
     public const int QueryTimeout = 60000; // 60 seconds

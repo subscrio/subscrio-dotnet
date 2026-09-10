@@ -246,8 +246,8 @@ public static class TestDatabase
 
             Console.WriteLine($"\n🔍 Test database preserved for debugging:");
             Console.WriteLine($"   Database: {dbName}");
-            Console.WriteLine($"   Connection: {builder.ConnectionString}");
-            Console.WriteLine($"   To connect: psql {builder.ConnectionString}");
+            Console.WriteLine($"   Host: {builder.Host}; Port: {builder.Port}; Database: {builder.Database}");
+            Console.WriteLine($"   To connect: psql -h {builder.Host} -p {builder.Port} -U {builder.Username} -d {dbName}");
             Console.WriteLine($"   To drop: DROP DATABASE {dbName};");
             return;
         }

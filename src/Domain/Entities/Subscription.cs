@@ -1,7 +1,6 @@
-using Subscrio.Core.Application.Errors;
+using Subscrio.Core.Domain.Errors;
 using Subscrio.Core.Domain.Base;
 using Subscrio.Core.Domain.ValueObjects;
-using Subscrio.Core.Infrastructure.Utils;
 
 namespace Subscrio.Core.Domain.Entities;
 
@@ -53,9 +52,9 @@ public class Subscription : Entity<SubscriptionProps>
 
     public void Activate()
     {
-        Props.ActivationDate ??= DateHelper.Now();
+        Props.ActivationDate ??= DateTime.UtcNow;
         Props.TrialEndDate = null; // Clear trial end date when activating
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Cancel()
@@ -64,68 +63,68 @@ public class Subscription : Entity<SubscriptionProps>
         {
             throw new DomainException($"Subscription is already cancelled. Current status: {Status}");
         }
-        Props.CancellationDate = DateHelper.Now();
-        Props.UpdatedAt = DateHelper.Now();
+        Props.CancellationDate = DateTime.UtcNow;
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Renew()
     {
         // Clear temporary overrides on renewal
         ClearTemporaryOverrides();
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Expire()
     {
-        Props.ExpirationDate = DateHelper.Now();
-        Props.UpdatedAt = DateHelper.Now();
+        Props.ExpirationDate = DateTime.UtcNow;
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Archive()
     {
         // Archive does not change any properties - just sets the archive flag
         Props.IsArchived = true;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void MarkAsTransitioned()
     {
         // Mark subscription as transitioned - archives it and sets transitioned_at timestamp
         Props.IsArchived = true;
-        Props.TransitionedAt = DateHelper.Now();
-        Props.UpdatedAt = DateHelper.Now();
+        Props.TransitionedAt = DateTime.UtcNow;
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unarchive()
     {
         // Unarchive just clears the archive flag
         Props.IsArchived = false;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void SetExpirationDate(DateTime date)
     {
         Props.ExpirationDate = date;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void SetActivationDate(DateTime date)
     {
         Props.ActivationDate = date;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void SetTrialEndDate(DateTime? date)
     {
         Props.TrialEndDate = date;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void SetCurrentPeriod(DateTime start, DateTime end)
     {
         Props.CurrentPeriodStart = start;
         Props.CurrentPeriodEnd = end;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void AddFeatureOverride(long featureId, string value, OverrideType type)
@@ -138,15 +137,15 @@ public class Subscription : Entity<SubscriptionProps>
             FeatureId = featureId,
             Value = value,
             Type = type,
-            CreatedAt = DateHelper.Now()
+            CreatedAt = DateTime.UtcNow
         });
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void RemoveFeatureOverride(long featureId)
     {
         Props.FeatureOverrides.RemoveAll(o => o.FeatureId == featureId);
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public FeatureOverride? GetFeatureOverride(long featureId)
@@ -157,7 +156,7 @@ public class Subscription : Entity<SubscriptionProps>
     public void ClearTemporaryOverrides()
     {
         Props.FeatureOverrides.RemoveAll(o => o.Type != OverrideType.Permanent);
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     // No deletion constraint - subscriptions can be deleted regardless of status

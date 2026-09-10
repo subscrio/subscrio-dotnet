@@ -21,6 +21,7 @@ public static class ConfigLoader
 
         var adminPassphrase = Environment.GetEnvironmentVariable("ADMIN_PASSPHRASE");
         var stripeSecretKey = Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY");
+        var stripeWebhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET");
 
         var logLevel = Environment.GetEnvironmentVariable("LOG_LEVEL")?.ToLowerInvariant() switch
         {
@@ -41,7 +42,13 @@ public static class ConfigLoader
                 DatabaseType = databaseType
             },
             AdminPassphrase = adminPassphrase,
-            Stripe = stripeSecretKey != null ? new StripeConfig { SecretKey = stripeSecretKey } : null,
+            Stripe = stripeSecretKey != null
+                ? new StripeConfig
+                {
+                    SecretKey = stripeSecretKey,
+                    WebhookSecret = stripeWebhookSecret
+                }
+                : null,
             Logging = new LoggingConfig { Level = logLevel }
         };
     }

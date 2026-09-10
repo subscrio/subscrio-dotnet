@@ -19,6 +19,7 @@ public record UpdateSubscriptionDto(
     DateTime? ExpirationDate = null,
     DateTime? CancellationDate = null,
     DateTime? TrialEndDate = null,
+    bool ClearTrialEndDate = false,
     DateTime? CurrentPeriodStart = null,
     DateTime? CurrentPeriodEnd = null,
     string? StripeSubscriptionId = null,

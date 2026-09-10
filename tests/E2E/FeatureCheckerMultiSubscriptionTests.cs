@@ -9,12 +9,12 @@ using Xunit;
 
 namespace Subscrio.Core.Tests.E2E;
 
-public class FeatureCheckerCachingTests : IDisposable
+public class FeatureCheckerMultiSubscriptionTests : IDisposable
 {
     private readonly Subscrio _subscrio;
     private readonly TestFixtures _fixtures;
 
-    public FeatureCheckerCachingTests()
+    public FeatureCheckerMultiSubscriptionTests()
     {
         // Ensure database is initialized
         TestDatabaseAssemblyFixture.EnsureInitialized();
@@ -47,7 +47,7 @@ public class FeatureCheckerCachingTests : IDisposable
         // Create a product with multiple plans
         var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
         {
-            ["DisplayName"] = "Caching Test Product"
+            ["DisplayName"] = "Multi-Sub Test Product"
         });
 
         // Create feature
@@ -75,7 +75,7 @@ public class FeatureCheckerCachingTests : IDisposable
         // Create customer with multiple subscriptions
         var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
         {
-            ["DisplayName"] = "Caching Test Customer"
+            ["DisplayName"] = "Multi-Sub Test Customer"
         });
 
         // Create subscriptions for all plans
@@ -85,7 +85,7 @@ public class FeatureCheckerCachingTests : IDisposable
             var plan = plans[i];
             var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
             {
-                ["DisplayName"] = $"Caching Cycle {i}",
+                ["DisplayName"] = $"Multi-Sub Cycle {i}",
                 ["DurationUnit"] = "months"
             });
 
@@ -96,7 +96,7 @@ public class FeatureCheckerCachingTests : IDisposable
             subscriptions.Add(subscription);
         }
 
-        // Get all features for customer - should use caching
+        // Get all features for customer - should resolve efficiently
         var startTime = DateTime.UtcNow;
         var allFeatures = await _subscrio.FeatureChecker.GetAllFeaturesForCustomerAsync(
             customer.Key,
@@ -104,7 +104,7 @@ public class FeatureCheckerCachingTests : IDisposable
         );
         var endTime = DateTime.UtcNow;
 
-        // Should complete quickly (caching should help)
+        // Should complete quickly (batch resolution)
         var duration = endTime - startTime;
         duration.TotalSeconds.Should().BeLessThan(5); // Should be fast
 

@@ -110,9 +110,24 @@ public class FeatureManagementService
             record.Description = dto.Description;
             record.UpdatedAt = DateHelper.Now();
         }
+        if (dto.ValueType != null)
+        {
+            if (!Enum.TryParse<FeatureValueType>(dto.ValueType, ignoreCase: true, out var valueType))
+            {
+                throw new ValidationException($"Invalid feature value type '{dto.ValueType}'");
+            }
+            record.ValueType = valueType.ToString().ToLowerInvariant();
+            record.UpdatedAt = DateHelper.Now();
+            // Re-validate default against the new type when both are present
+            var defaultToValidate = dto.DefaultValue ?? record.DefaultValue;
+            FeatureValueValidator.Validate(defaultToValidate, valueType);
+        }
         if (dto.DefaultValue != null)
         {
-            FeatureValueValidator.Validate(dto.DefaultValue, feature.Props.ValueType);
+            var typeForValidation = Enum.Parse<FeatureValueType>(
+                dto.ValueType ?? record.ValueType,
+                ignoreCase: true);
+            FeatureValueValidator.Validate(dto.DefaultValue, typeForValidation);
             record.DefaultValue = dto.DefaultValue;
             record.UpdatedAt = DateHelper.Now();
         }

@@ -1,7 +1,6 @@
-using Subscrio.Core.Application.Errors;
+using Subscrio.Core.Domain.Errors;
 using Subscrio.Core.Domain.Base;
 using Subscrio.Core.Domain.ValueObjects;
-using Subscrio.Core.Infrastructure.Utils;
 
 namespace Subscrio.Core.Domain.Entities;
 
@@ -39,13 +38,13 @@ public class Feature : Entity<FeatureProps>
     public void Archive()
     {
         Props.Status = FeatureStatus.Archived;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unarchive()
     {
         Props.Status = FeatureStatus.Active;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public bool CanDelete()
@@ -60,6 +59,6 @@ public class Feature : Entity<FeatureProps>
             throw new DomainException("Display name cannot be empty");
         }
         Props.DisplayName = name;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 }

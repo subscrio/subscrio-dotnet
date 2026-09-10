@@ -16,7 +16,7 @@ public class CreatePlanDtoValidator : AbstractValidator<CreatePlanDto>
             .NotEmpty().WithMessage("Key is required")
             .MinimumLength(1).WithMessage("Key is required")
             .MaximumLength(255).WithMessage("Key too long")
-            .Matches(@"^[a-z0-9-]+$").WithMessage("Key must be globally unique across all plans");
+            .Matches(@"^[a-z0-9-]+$").WithMessage("Key must be lowercase alphanumeric with hyphens");
 
         RuleFor(x => x.DisplayName)
             .NotEmpty().WithMessage("Display name is required")

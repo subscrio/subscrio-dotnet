@@ -1,8 +1,7 @@
-using Subscrio.Core.Application.Constants;
-using Subscrio.Core.Application.Errors;
+using Subscrio.Core.Domain.Constants;
+using Subscrio.Core.Domain.Errors;
 using Subscrio.Core.Domain.Base;
 using Subscrio.Core.Domain.ValueObjects;
-using Subscrio.Core.Infrastructure.Utils;
 
 namespace Subscrio.Core.Domain.Entities;
 
@@ -32,13 +31,13 @@ public class Product : Entity<ProductProps>
     public void Archive()
     {
         Props.Status = ProductStatus.Archived;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unarchive()
     {
         Props.Status = ProductStatus.Active;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public bool CanDelete()
@@ -48,15 +47,15 @@ public class Product : Entity<ProductProps>
 
     public void UpdateDisplayName(string name)
     {
-        if (string.IsNullOrWhiteSpace(name) || name.Trim().Length < ApplicationConstants.MinDisplayNameLength)
+        if (string.IsNullOrWhiteSpace(name) || name.Trim().Length < DomainConstants.MinDisplayNameLength)
         {
             throw new DomainException($"Display name cannot be empty. Product key: {Key}");
         }
-        if (name.Length > ApplicationConstants.MaxDisplayNameLength)
+        if (name.Length > DomainConstants.MaxDisplayNameLength)
         {
-            throw new DomainException($"Display name cannot exceed {ApplicationConstants.MaxDisplayNameLength} characters. Product key: {Key}, provided length: {name.Length}");
+            throw new DomainException($"Display name cannot exceed {DomainConstants.MaxDisplayNameLength} characters. Product key: {Key}, provided length: {name.Length}");
         }
         Props.DisplayName = name;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 }

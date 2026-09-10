@@ -57,7 +57,8 @@ public class SubscriptionManagementService
     private async Task<SubscriptionDto> ToDtoAsync(SubscriptionStatusViewRecord viewRecord)
     {
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
-        var subscription = SubscriptionMapper.ToDomain(viewRecord, new List<FeatureOverride>());
+        var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
+        var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
         return SubscriptionMapper.ToDto(
             subscription,
             keys.CustomerKey,
@@ -65,6 +66,18 @@ public class SubscriptionManagementService
             keys.PlanKey,
             keys.BillingCycleKey
         );
+    }
+
+    private async Task<List<FeatureOverride>> LoadFeatureOverridesAsync(long subscriptionId)
+    {
+        var featureOverrides = await _subscriptionRepository.GetFeatureOverridesAsync(subscriptionId);
+        return featureOverrides.Select(fo => new FeatureOverride
+        {
+            FeatureId = fo.FeatureId,
+            Value = fo.Value,
+            Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
+            CreatedAt = fo.CreatedAt
+        }).ToList();
     }
 
     private async Task<(string CustomerKey, string ProductKey, string PlanKey, string BillingCycleKey)> ResolveSubscriptionKeysAsync(SubscriptionStatusViewRecord subscription)
@@ -229,12 +242,65 @@ public class SubscriptionManagementService
         if (before?.New != null)
         {
             ApplySubscriptionDtoMutation.Apply(record, before.New, allowKeyChange: true);
+
+            // Re-resolve FKs when hooks change customer or billing cycle keys
+            if (!string.Equals(before.New.CustomerKey, customer.Key, StringComparison.Ordinal))
+            {
+                customer = await _customerRepository.FindByKeyAsync(before.New.CustomerKey)
+                    ?? throw new NotFoundException($"Customer with key '{before.New.CustomerKey}' not found");
+                record.CustomerId = customer.Id;
+            }
+
+            if (!string.Equals(before.New.BillingCycleKey, billingCycle.Key, StringComparison.Ordinal))
+            {
+                billingCycle = await _billingCycleRepository.FindByKeyAsync(before.New.BillingCycleKey)
+                    ?? throw new NotFoundException($"Billing cycle with key '{before.New.BillingCycleKey}' not found");
+                plan = await _planRepository.FindByIdAsync(billingCycle.PlanId)
+                    ?? throw new NotFoundException($"Plan not found for billing cycle '{before.New.BillingCycleKey}'");
+                record.BillingCycleId = billingCycle.Id;
+                record.PlanId = plan.Id;
+                product = await _productRepository.FindByIdAsync(plan.ProductId)
+                    ?? throw new NotFoundException($"Product not found for plan '{plan.Key}'");
+            }
+
+            // Re-validate after before-hook mutations
+            var revalidateDto = new CreateSubscriptionDto(
+                record.Key,
+                before.New.CustomerKey,
+                before.New.BillingCycleKey,
+                record.ActivationDate,
+                record.ExpirationDate,
+                record.CancellationDate,
+                record.TrialEndDate,
+                record.CurrentPeriodStart,
+                record.CurrentPeriodEnd,
+                record.StripeSubscriptionId,
+                record.Metadata);
+            var revalidation = await _createValidator.ValidateAsync(revalidateDto);
+            if (!revalidation.IsValid)
+            {
+                throw new ValidationException(
+                    "Invalid subscription data after hook mutation",
+                    revalidation.Errors
+                );
+            }
+
             if (record.Key != dto.Key)
             {
                 var keyTaken = await _subscriptionRepository.FindByKeyAsync(record.Key);
                 if (keyTaken != null)
                 {
                     throw new ConflictException($"Subscription with key '{record.Key}' already exists");
+                }
+            }
+
+            if (record.StripeSubscriptionId != null &&
+                record.StripeSubscriptionId != dto.StripeSubscriptionId)
+            {
+                var existingStripe = await _subscriptionRepository.FindByStripeIdAsync(record.StripeSubscriptionId);
+                if (existingStripe != null)
+                {
+                    throw new ConflictException($"Subscription with Stripe ID '{record.StripeSubscriptionId}' already exists");
                 }
             }
         }
@@ -250,9 +316,7 @@ public class SubscriptionManagementService
         }
 
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
-        
-        // Load feature overrides for mapper (empty for new subscriptions)
-        var overrides = new List<FeatureOverride>();
+        var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
         
         var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
         var savedDto = SubscriptionMapper.ToDto(
@@ -283,8 +347,8 @@ public class SubscriptionManagementService
             );
         }
 
-        // Check if trialEndDate was explicitly set to null/undefined in original input
-        var wasTrialEndDateCleared = dto.TrialEndDate == null;
+        // Check if trialEndDate should be updated (set or explicitly cleared)
+        var shouldUpdateTrialEndDate = dto.TrialEndDate != null || dto.ClearTrialEndDate;
 
         // Load tracked record for updates
         var record = await _subscriptionRepository.FindByKeyForUpdateAsync(subscriptionKey);
@@ -314,10 +378,10 @@ public class SubscriptionManagementService
         {
             record.CancellationDate = dto.CancellationDate;
         }
-        // Handle trialEndDate updates
-        if (dto.TrialEndDate != null || wasTrialEndDateCleared)
+        // Handle trialEndDate updates — omitted leaves existing value alone
+        if (shouldUpdateTrialEndDate)
         {
-            record.TrialEndDate = dto.TrialEndDate;
+            record.TrialEndDate = dto.ClearTrialEndDate ? null : dto.TrialEndDate;
         }
         if (dto.CurrentPeriodStart != null)
         {
@@ -330,6 +394,10 @@ public class SubscriptionManagementService
         if (dto.Metadata != null)
         {
             record.Metadata = dto.Metadata;
+        }
+        if (dto.StripeSubscriptionId != null)
+        {
+            record.StripeSubscriptionId = dto.StripeSubscriptionId;
         }
         if (dto.BillingCycleKey != null)
         {
@@ -402,9 +470,7 @@ public class SubscriptionManagementService
         }
 
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
-        
-        // Load feature overrides for mapper
-        var overrides = new List<FeatureOverride>(); // TODO: Load actual overrides
+        var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
         
         var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
         var savedDto = SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey);
@@ -424,9 +490,7 @@ public class SubscriptionManagementService
         if (viewRecord == null) return null;
 
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
-        
-        // Load feature overrides for mapper
-        var overrides = new List<FeatureOverride>(); // TODO: Load actual overrides
+        var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
         
         var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
         return SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey);
@@ -652,21 +716,20 @@ public class SubscriptionManagementService
             );
         }
 
-        // Resolve keys to IDs first
+        // Resolve keys early so missing keys return empty (not an unfiltered page)
         var resolvedFilters = await ResolveFilterKeysAsync(filterDto);
 
-        // If any key resolution returned null/empty, return empty array
         if (resolvedFilters == null ||
             (resolvedFilters.ContainsKey("planIds") && resolvedFilters["planIds"] is List<long> planIds && planIds.Count == 0))
         {
             return new List<SubscriptionDto>();
         }
 
-        // Merge resolved IDs with other filter properties (sortBy, sortOrder, limit, offset, status, isArchived)
+        // Pass original keys through so the repository can filter in SQL
         var dbFilters = new SubscriptionFilterDto(
-            CustomerKey: null, // Already resolved to customerId
-            ProductKey: null, // Already resolved to planIds
-            PlanKey: null, // Already resolved to planId
+            CustomerKey: filterDto.CustomerKey,
+            ProductKey: filterDto.ProductKey,
+            PlanKey: filterDto.PlanKey,
             Status: filterDto.Status,
             IsArchived: filterDto.IsArchived,
             SortBy: filterDto.SortBy,
@@ -675,9 +738,6 @@ public class SubscriptionManagementService
             Offset: filterDto.Offset
         );
 
-        // Query repository with IDs - filtering happens in SQL, returns subscription + customer
-        // Note: Repository will need to handle the resolved IDs internally
-        // For now, we'll use the filter DTO and let repository handle resolution
         var results = await _subscriptionRepository.FindAllAsync(dbFilters);
 
         // Map to DTOs
@@ -693,14 +753,7 @@ public class SubscriptionManagementService
                 : null;
             
             // Convert SubscriptionStatusViewRecord to domain entity for DTO mapping
-            var featureOverrides = await _subscriptionRepository.GetFeatureOverridesAsync(result.Subscription.Id);
-            var overrideList = featureOverrides.Select(fo => new FeatureOverride
-            {
-                FeatureId = fo.FeatureId,
-                Value = fo.Value,
-                Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-                CreatedAt = fo.CreatedAt
-            }).ToList();
+            var overrideList = await LoadFeatureOverridesAsync(result.Subscription.Id);
             var subscription = SubscriptionMapper.ToDomain(result.Subscription, overrideList);
             
             dtos.Add(SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey, customerDto));
@@ -719,31 +772,16 @@ public class SubscriptionManagementService
             );
         }
 
-        // Resolve keys to IDs first
+        // Resolve keys early so missing keys return empty
         var resolvedFilters = await ResolveDetailedFilterKeysAsync(filters);
 
-        // If any key resolution returned null/empty, return empty array
         if (resolvedFilters == null ||
             (resolvedFilters.ContainsKey("planIds") && resolvedFilters["planIds"] is List<long> planIds && planIds.Count == 0))
         {
             return new List<SubscriptionDto>();
         }
 
-        // Merge resolved IDs with other filter properties
-        var dbFilters = new SubscriptionFilterDto(
-            CustomerKey: null,
-            ProductKey: null,
-            PlanKey: null,
-            Status: filters.Status,
-            IsArchived: filters.IsArchived,
-            SortBy: filters.SortBy,
-            SortOrder: filters.SortOrder,
-            Limit: filters.Limit,
-            Offset: filters.Offset
-        );
-
-        // Query repository with IDs
-        var results = await _subscriptionRepository.FindAllAsync(dbFilters);
+        var results = await _subscriptionRepository.FindDetailedAsync(filters, resolvedFilters);
 
         // Filter by hasFeatureOverrides (unavoidable post-fetch since it requires loading feature overrides)
         var filteredResults = results;
@@ -774,14 +812,7 @@ public class SubscriptionManagementService
                 : null;
             
             // Convert SubscriptionStatusViewRecord to domain entity for DTO mapping
-            var featureOverrides = await _subscriptionRepository.GetFeatureOverridesAsync(result.Subscription.Id);
-            var overrideList = featureOverrides.Select(fo => new FeatureOverride
-            {
-                FeatureId = fo.FeatureId,
-                Value = fo.Value,
-                Type = Enum.Parse<OverrideType>(fo.OverrideType, ignoreCase: true),
-                CreatedAt = fo.CreatedAt
-            }).ToList();
+            var overrideList = await LoadFeatureOverridesAsync(result.Subscription.Id);
             var subscription = SubscriptionMapper.ToDomain(result.Subscription, overrideList);
             
             dtos.Add(SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey, customerDto));
@@ -803,7 +834,7 @@ public class SubscriptionManagementService
         foreach (var subscriptionView in subscriptions)
         {
             var keys = await ResolveSubscriptionKeysAsync(subscriptionView);
-            var overrides = new List<FeatureOverride>(); // TODO: Load actual overrides
+            var overrides = await LoadFeatureOverridesAsync(subscriptionView.Id);
             var subscription = SubscriptionMapper.ToDomain(subscriptionView, overrides);
             dtos.Add(SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey));
         }
@@ -1244,8 +1275,7 @@ public class SubscriptionManagementService
                     continue;
                 }
 
-                // Mark subscription as transitioned (archives it and sets transitioned_at)
-                // Load tracked record for update
+                // Load tracked record for update (metadata + later archive)
                 var expiredRecord = await _subscriptionRepository.FindByKeyForUpdateAsync(expiredSubscription.Key);
                 if (expiredRecord == null)
                 {
@@ -1258,39 +1288,8 @@ public class SubscriptionManagementService
                     };
                     continue;
                 }
-                var oldArchivedDto = await ToDtoAsync(expiredSubscription);
-                var newArchivedDto = oldArchivedDto.Clone();
-                newArchivedDto.IsArchived = true;
-                newArchivedDto.UpdatedAt = DateHelper.Now().ToUniversalTime().ToString("O");
-                var archiveBefore = await _hooks.EmitSubscriptionBeforeAsync(
-                    HookEvents.SubscriptionArchivedBefore,
-                    HookSource.System,
-                    expiredRecord.Id,
-                    expiredRecord.CustomerId,
-                    oldArchivedDto,
-                    newArchivedDto);
-                if (archiveBefore?.New != null)
-                {
-                    ApplySubscriptionDtoMutation.Apply(expiredRecord, archiveBefore.New, allowKeyChange: false);
-                }
-                expiredRecord.IsArchived = true;
-                expiredRecord.TransitionedAt = DateHelper.Now();
-                expiredRecord.UpdatedAt = DateHelper.Now();
-                var archivedSaved = await _subscriptionRepository.SaveAsync(expiredRecord);
-                var archivedView = await _subscriptionRepository.FindByKeyAsync(archivedSaved.Key);
-                if (archivedView != null)
-                {
-                    await _hooks.EmitSubscriptionAfterAsync(
-                        HookEvents.SubscriptionArchivedAfter,
-                        HookSource.System,
-                        archivedSaved.Id,
-                        archivedSaved.CustomerId,
-                        oldArchivedDto,
-                        await ToDtoAsync(archivedView));
-                }
-                report = report with { Archived = report.Archived + 1 };
 
-                // Generate versioned key for new subscription
+                // Create replacement BEFORE archiving so create failures leave the old sub intact
                 var newSubscriptionKey = GenerateVersionedKey(expiredSubscription.Key);
 
                 // Check if key already exists (shouldn't happen, but be safe)
@@ -1406,6 +1405,39 @@ public class SubscriptionManagementService
                         await ToDtoAsync(savedNewView));
                 }
                 report = report with { Transitioned = report.Transitioned + 1 };
+
+                // Archive old subscription only after replacement was created successfully
+                var oldArchivedDto = await ToDtoAsync(expiredSubscription);
+                var newArchivedDto = oldArchivedDto.Clone();
+                newArchivedDto.IsArchived = true;
+                newArchivedDto.UpdatedAt = DateHelper.Now().ToUniversalTime().ToString("O");
+                var archiveBefore = await _hooks.EmitSubscriptionBeforeAsync(
+                    HookEvents.SubscriptionArchivedBefore,
+                    HookSource.System,
+                    expiredRecord.Id,
+                    expiredRecord.CustomerId,
+                    oldArchivedDto,
+                    newArchivedDto);
+                if (archiveBefore?.New != null)
+                {
+                    ApplySubscriptionDtoMutation.Apply(expiredRecord, archiveBefore.New, allowKeyChange: false);
+                }
+                expiredRecord.IsArchived = true;
+                expiredRecord.TransitionedAt = DateHelper.Now();
+                expiredRecord.UpdatedAt = DateHelper.Now();
+                var archivedSaved = await _subscriptionRepository.SaveAsync(expiredRecord);
+                var archivedView = await _subscriptionRepository.FindByKeyAsync(archivedSaved.Key);
+                if (archivedView != null)
+                {
+                    await _hooks.EmitSubscriptionAfterAsync(
+                        HookEvents.SubscriptionArchivedAfter,
+                        HookSource.System,
+                        archivedSaved.Id,
+                        archivedSaved.CustomerId,
+                        oldArchivedDto,
+                        await ToDtoAsync(archivedView));
+                }
+                report = report with { Archived = report.Archived + 1 };
             }
             catch (Exception error)
             {

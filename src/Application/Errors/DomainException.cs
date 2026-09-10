@@ -1,9 +1,10 @@
 namespace Subscrio.Core.Application.Errors;
 
 /// <summary>
-/// Domain business rule violation
+/// Compatibility type for callers that import <c>Subscrio.Core.Application.Errors</c>.
+/// Prefer <see cref="Domain.Errors.DomainException"/> in Domain code.
 /// </summary>
-public class DomainException : Exception
+public class DomainException : Domain.Errors.DomainException
 {
     public DomainException(string message) : base(message)
     {
@@ -13,5 +14,3 @@ public class DomainException : Exception
     {
     }
 }
-
-

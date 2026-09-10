@@ -1,5 +1,4 @@
 using Subscrio.Core.Domain.Base;
-using Subscrio.Core.Infrastructure.Utils;
 
 namespace Subscrio.Core.Domain.Entities;
 
@@ -27,6 +26,6 @@ public class SystemConfig : Entity<SystemConfigProps>
     public void UpdateValue(string value)
     {
         Props.ConfigValue = value;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 }

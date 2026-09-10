@@ -96,7 +96,7 @@ public class FeatureCheckerService
 
         // Resolve using hierarchy
         var value = _resolver.Resolve(feature, plan, subscription);
-        return value != null ? (T)(object)value : (defaultValue ?? default);
+        return ConvertFeatureValue(value, defaultValue);
     }
 
     /// <summary>
@@ -285,11 +285,12 @@ public class FeatureCheckerService
         if (productSubscriptions.Count == 0)
         {
             // No active subscriptions for this product, return feature default
-            return featureDomain.DefaultValue != null ? (T)(object)featureDomain.DefaultValue : (defaultValue ?? default);
+            return ConvertFeatureValue(featureDomain.DefaultValue, defaultValue);
         }
 
-        // Resolve using hierarchy
-        string? resolvedValue = null;
+        // Resolve using hierarchy — do not lock onto the first subscription's feature default
+        // when another active/trial subscription has a plan value (mirrors FeatureValueResolver.ResolveAll).
+        var resolvedValue = featureDomain.DefaultValue;
 
         foreach (var subscriptionView in productSubscriptions)
         {
@@ -322,16 +323,16 @@ public class FeatureCheckerService
                     resolvedValue = value;
                     break; // Override found, stop checking
                 }
-            }
-            
-            // Otherwise, if plan has value and we don't have one yet
-            if (resolvedValue == null)
-            {
-                resolvedValue = value;
+
+                var hasPlanValue = planFeatureValues.Any(pf => pf.FeatureId == featureDomain.Id.Value);
+                if (hasPlanValue && resolvedValue == featureDomain.DefaultValue)
+                {
+                    resolvedValue = value;
+                }
             }
         }
 
-        return resolvedValue != null ? (T)(object)resolvedValue : (defaultValue ?? default);
+        return ConvertFeatureValue(resolvedValue, defaultValue);
     }
 
     /// <summary>
@@ -494,11 +495,16 @@ public class FeatureCheckerService
             return false;
         }
 
+        if (plan.ProductId != product.Id)
+        {
+            return false;
+        }
+
         var subscriptions = await SubscriptionRepository.FindByCustomerIdAsync(
             customer.Id,
             new SubscriptionFilterDto
             {
-                Limit = 100,
+                Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
                 Offset = 0
             }
         );
@@ -525,20 +531,29 @@ public class FeatureCheckerService
             customer.Id,
             new SubscriptionFilterDto
             {
-                Limit = 100,
+                Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
                 Offset = 0
             }
         );
 
+        var activeSubscriptions = subscriptions
+            .Where(s =>
+            {
+                var status = s.ComputedStatus.ToLowerInvariant();
+                return status == "active" || status == "trial";
+            })
+            .ToList();
+
         // Batch load all plans to avoid N+1 queries
-        var planIds = subscriptions.Select(s => s.PlanId).ToList();
+        var planIds = activeSubscriptions.Select(s => s.PlanId).Distinct().ToList();
         var plans = await PlanRepository.FindByIdsAsync(planIds);
 
-        return plans.Select(plan => plan.Key).ToList();
+        return plans.Select(plan => plan.Key).Distinct().ToList();
     }
 
     /// <summary>
-    /// Get feature usage summary for a customer in a specific product
+    /// Get feature usage summary for a customer in a specific product.
+    /// Counts only active/trial subscriptions scoped to the given product.
     /// </summary>
     public async Task<FeatureUsageSummaryDto> GetFeatureUsageSummaryAsync(
         string customerKey,
@@ -546,12 +561,34 @@ public class FeatureCheckerService
     )
     {
         var customer = await CustomerRepository.FindByKeyAsync(customerKey);
-        var activeSubscriptions = customer != null
-            ? (await SubscriptionRepository.FindByCustomerIdAsync(
+        var product = await ProductRepository.FindByKeyAsync(productKey);
+
+        var activeSubscriptions = 0;
+        if (customer != null && product != null)
+        {
+            var subscriptions = await SubscriptionRepository.FindByCustomerIdAsync(
                 customer.Id,
-                new SubscriptionFilterDto { Limit = 100, Offset = 0 }
-            )).Count
-            : 0;
+                new SubscriptionFilterDto
+                {
+                    Limit = ApplicationConstants.MaxSubscriptionsPerCustomer,
+                    Offset = 0
+                }
+            );
+
+            var planIds = subscriptions.Select(s => s.PlanId).Distinct().ToList();
+            var plans = await PlanRepository.FindByIdsAsync(planIds);
+            var productPlanIds = plans
+                .Where(p => p.ProductId == product.Id)
+                .Select(p => p.Id)
+                .ToHashSet();
+
+            activeSubscriptions = subscriptions.Count(s =>
+            {
+                var status = s.ComputedStatus.ToLowerInvariant();
+                return productPlanIds.Contains(s.PlanId) &&
+                       (status == "active" || status == "trial");
+            });
+        }
 
         var allFeatures = await GetAllFeaturesForCustomerAsync(customerKey, productKey);
 
@@ -561,7 +598,6 @@ public class FeatureCheckerService
         var textFeatures = new Dictionary<string, string>();
 
         // Get all features to determine their types
-        var product = await ProductRepository.FindByKeyAsync(productKey);
         if (product == null)
         {
             return new FeatureUsageSummaryDto(
@@ -616,5 +652,71 @@ public class FeatureCheckerService
             numericFeatures,
             textFeatures
         );
+    }
+
+    /// <summary>
+    /// Convert a stored string feature value to <typeparamref name="T"/>.
+    /// Supports string, bool, numeric primitives, decimal, and Guid. Other types fall back to <paramref name="defaultValue"/>.
+    /// </summary>
+    private static T? ConvertFeatureValue<T>(string? value, T? defaultValue)
+    {
+        if (value == null)
+        {
+            return defaultValue ?? default;
+        }
+
+        var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+
+        if (targetType == typeof(string))
+        {
+            return (T)(object)value;
+        }
+
+        if (targetType == typeof(bool))
+        {
+            if (bool.TryParse(value, out var b))
+            {
+                return (T)(object)b;
+            }
+            if (value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("on", StringComparison.OrdinalIgnoreCase))
+            {
+                return (T)(object)true;
+            }
+            if (value.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("off", StringComparison.OrdinalIgnoreCase))
+            {
+                return (T)(object)false;
+            }
+            return defaultValue ?? default;
+        }
+
+        if (targetType == typeof(Guid))
+        {
+            return Guid.TryParse(value, out var g) ? (T)(object)g : (defaultValue ?? default);
+        }
+
+        try
+        {
+            if (targetType == typeof(int) ||
+                targetType == typeof(long) ||
+                targetType == typeof(short) ||
+                targetType == typeof(byte) ||
+                targetType == typeof(float) ||
+                targetType == typeof(double) ||
+                targetType == typeof(decimal))
+            {
+                return (T)Convert.ChangeType(value, targetType, System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+        catch
+        {
+            return defaultValue ?? default;
+        }
+
+        // Unsupported T — callers should prefer string or a supported primitive
+        return defaultValue ?? default;
     }
 }

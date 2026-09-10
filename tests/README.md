@@ -176,7 +176,7 @@ tests/
     ├── SubscriptionsTests.cs
     ├── BillingCyclesTests.cs
     ├── FeatureCheckerTests.cs             # CRITICAL - test resolution hierarchy
-    ├── FeatureCheckerCachingTests.cs
+    ├── FeatureCheckerMultiSubscriptionTests.cs
     ├── ConfigSyncTests.cs
     ├── StripeIntegrationTests.cs
     └── PerformanceTests.cs
@@ -343,7 +343,8 @@ Every public method must have tests:
 
 ### StripeIntegrationService (`subscrio.Stripe`)
 - `ProcessStripeEventAsync(event)` - Process verified Stripe webhook event
-- `CreateStripeSubscriptionAsync(customerKey, planKey, billingCycleKey)` - Create Stripe subscription
+- `CreateCheckoutSessionAsync(...)` - Create a Stripe Checkout session URL
+- `ProcessStripeEventAsync(stripeEvent)` - Sync a verified Stripe webhook event
 
 ## Example Test: Feature Resolution Hierarchy
 

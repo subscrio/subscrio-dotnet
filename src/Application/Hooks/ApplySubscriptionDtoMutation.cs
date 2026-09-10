@@ -18,6 +18,8 @@ public static class ApplySubscriptionDtoMutation
             record.Key = dto.Key;
         }
 
+        record.IsArchived = dto.IsArchived;
+        record.ActivationDate = ParseDate(dto.ActivationDate);
         record.ExpirationDate = ParseDate(dto.ExpirationDate);
         record.CancellationDate = ParseDate(dto.CancellationDate);
         record.TrialEndDate = ParseDate(dto.TrialEndDate);

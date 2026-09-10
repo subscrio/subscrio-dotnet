@@ -175,7 +175,12 @@ public class PlanManagementService
             record.Description = dto.Description;
             record.UpdatedAt = DateHelper.Now();
         }
-        if (dto.OnExpireTransitionToBillingCycleKey != null)
+        if (dto.ClearOnExpireTransitionToBillingCycleKey)
+        {
+            record.OnExpireTransitionToBillingCycleId = null;
+            record.UpdatedAt = DateHelper.Now();
+        }
+        else if (dto.OnExpireTransitionToBillingCycleKey != null)
         {
             var billingCycle = await _billingCycleRepository.FindByKeyAsync(dto.OnExpireTransitionToBillingCycleKey);
             if (billingCycle == null)
@@ -367,6 +372,15 @@ public class PlanManagementService
         if (featureRecord == null)
         {
             throw new NotFoundException($"Feature with key '{featureKey}' not found");
+        }
+
+        var associatedFeatureIds = await _productRepository.GetFeaturesByProductAsync(planRecord.ProductId);
+        if (!associatedFeatureIds.Contains(featureRecord.Id))
+        {
+            throw new ValidationException(
+                $"Feature '{featureKey}' is not associated with the product for plan '{planKey}'. " +
+                "Associate the feature with the product before setting a plan value."
+            );
         }
 
         // Convert to domain entity for validation

@@ -21,6 +21,10 @@ public static class ApplyCustomerDtoMutation
         record.DisplayName = dto.DisplayName;
         record.Email = dto.Email;
         record.ExternalBillingId = dto.ExternalBillingId;
+        if (!string.IsNullOrWhiteSpace(dto.Status))
+        {
+            record.Status = dto.Status.Trim().ToLowerInvariant();
+        }
         record.Metadata = dto.Metadata;
         record.UpdatedAt = DateHelper.Now();
     }

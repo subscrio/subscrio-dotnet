@@ -1,6 +1,5 @@
 using Subscrio.Core.Domain.Base;
 using Subscrio.Core.Domain.ValueObjects;
-using Subscrio.Core.Infrastructure.Utils;
 
 namespace Subscrio.Core.Domain.Entities;
 
@@ -31,19 +30,19 @@ public class Customer : Entity<CustomerProps>
     public void SetExternalBillingId(string? externalBillingId)
     {
         Props.ExternalBillingId = externalBillingId;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Archive()
     {
         Props.Status = CustomerStatus.Archived;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unarchive()
     {
         Props.Status = CustomerStatus.Active;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public bool CanDelete()

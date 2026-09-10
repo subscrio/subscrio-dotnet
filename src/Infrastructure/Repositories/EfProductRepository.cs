@@ -90,14 +90,14 @@ public class EfProductRepository : IProductRepository
             query = query.OrderBy(p => p.DisplayName);
         }
 
-        if (filters?.Limit > 0)
-        {
-            query = query.Take(filters.Limit);
-        }
-
         if (filters?.Offset > 0)
         {
             query = query.Skip(filters.Offset);
+        }
+
+        if (filters?.Limit > 0)
+        {
+            query = query.Take(filters.Limit);
         }
 
         return await query.ToListAsync();

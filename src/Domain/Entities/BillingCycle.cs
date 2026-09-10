@@ -1,6 +1,5 @@
 using Subscrio.Core.Domain.Base;
 using Subscrio.Core.Domain.ValueObjects;
-using Subscrio.Core.Infrastructure.Utils;
 
 namespace Subscrio.Core.Domain.Entities;
 
@@ -58,13 +57,13 @@ public class BillingCycle : Entity<BillingCycleProps>
     public void Archive()
     {
         Props.Status = BillingCycleStatus.Archived;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public void Unarchive()
     {
         Props.Status = BillingCycleStatus.Active;
-        Props.UpdatedAt = DateHelper.Now();
+        Props.UpdatedAt = DateTime.UtcNow;
     }
 
     public bool CanDelete()

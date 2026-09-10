@@ -477,5 +477,94 @@ public class FeatureCheckerTests : IDisposable
             value.Should().Be("10");
         }
     }
+
+    public class PlanAccess : FeatureCheckerTests
+    {
+        public PlanAccess() : base() { }
+
+        [Fact]
+        public async Task HasPlanAccessAsync_ReturnsFalse_WhenProductDoesNotMatchPlan()
+        {
+            var productA = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Product A"
+            });
+            var productB = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Product B"
+            });
+
+            var plan = await _fixtures.CreatePlanAsync(productA.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Plan On A"
+            });
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Monthly",
+                ["DurationUnit"] = "months"
+            });
+
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Mismatch Customer"
+            });
+
+            await _fixtures.CreateSubscriptionAsync(customer.Key, billingCycle.Key);
+
+            var hasAccess = await _subscrio.FeatureChecker.HasPlanAccessAsync(
+                customer.Key,
+                productB.Key,
+                plan.Key
+            );
+
+            hasAccess.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task GetActivePlansAsync_ExcludesExpiredSubscriptions()
+        {
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Active Plans Product"
+            });
+
+            var activePlan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Active Plan"
+            });
+            var expiredPlan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Expired Plan"
+            });
+
+            var activeCycle = await _fixtures.CreateBillingCycleAsync(activePlan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Active Monthly",
+                ["DurationUnit"] = "months"
+            });
+            var expiredCycle = await _fixtures.CreateBillingCycleAsync(expiredPlan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Expired Monthly",
+                ["DurationUnit"] = "months"
+            });
+
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Expired Plans Customer"
+            });
+
+            await _fixtures.CreateSubscriptionAsync(customer.Key, activeCycle.Key);
+            await _fixtures.CreateSubscriptionAsync(customer.Key, expiredCycle.Key, new Dictionary<string, object>
+            {
+                ["ExpirationDate"] = DateTime.UtcNow.AddMinutes(-5)
+            });
+
+            var activePlans = await _subscrio.FeatureChecker.GetActivePlansAsync(customer.Key);
+
+            activePlans.Should().Contain(activePlan.Key);
+            activePlans.Should().NotContain(expiredPlan.Key);
+        }
+    }
 }
 

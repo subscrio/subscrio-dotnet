@@ -254,12 +254,16 @@ public class HookDispatcher
         CancellationToken cancellationToken = default)
     {
         if (!HasListeners(eventName)) return;
+
+        // Snapshot so handlers cannot mutate the live event used by ProcessStripeEventAsync
+        var snapshot = CloneStripeEvent(stripeEvent);
+
         var payload = new StripeReceivedHookEvent
         {
             Type = eventName,
             Phase = phase.ToWireValue(),
             OccurredAt = DateTime.UtcNow.ToString("O"),
-            Data = stripeEvent
+            Data = snapshot
         };
         foreach (var handler in _handlers[eventName].ToList())
         {
@@ -267,6 +271,19 @@ public class HookDispatcher
             {
                 await typed(payload, cancellationToken);
             }
+        }
+    }
+
+    private static Stripe.Event CloneStripeEvent(Stripe.Event stripeEvent)
+    {
+        try
+        {
+            var json = stripeEvent.ToJson();
+            return Stripe.Event.FromJson(json) ?? stripeEvent;
+        }
+        catch
+        {
+            return stripeEvent;
         }
     }
 }

@@ -23,7 +23,7 @@ public static class SubscriptionMapper
             ProductKey = productKey,
             PlanKey = planKey,
             BillingCycleKey = billingCycleKey,
-            Status = subscription.Status.ToString().ToLowerInvariant(),
+            Status = FormatStatus(subscription.Status),
             IsArchived = subscription.IsArchived,
             ActivationDate = subscription.Props.ActivationDate?.ToUniversalTime().ToString("O"),
             ExpirationDate = subscription.Props.ExpirationDate?.ToUniversalTime().ToString("O"),
@@ -45,8 +45,8 @@ public static class SubscriptionMapper
     /// </summary>
     public static Subscription ToDomain(SubscriptionStatusViewRecord record, List<FeatureOverride> featureOverrides)
     {
-        var status = Enum.Parse<SubscriptionStatus>(record.ComputedStatus, ignoreCase: true);
-        
+        var status = ParseStatus(record.ComputedStatus);
+
         return new Subscription(
             new SubscriptionProps
             {
@@ -54,7 +54,7 @@ public static class SubscriptionMapper
                 CustomerId = record.CustomerId,
                 PlanId = record.PlanId,
                 BillingCycleId = record.BillingCycleId,
-                Status = status, // Use computed status from view
+                Status = status,
                 IsArchived = record.IsArchived,
                 ActivationDate = record.ActivationDate,
                 ExpirationDate = record.ExpirationDate,
@@ -169,4 +169,28 @@ public static class SubscriptionMapper
         // Default to active
         return SubscriptionStatus.Active;
     }
+
+    /// <summary>
+    /// Parses snake_case status strings from the DB view (e.g. cancellation_pending).
+    /// </summary>
+    internal static SubscriptionStatus ParseStatus(string computedStatus)
+    {
+        var normalized = computedStatus.Trim().ToLowerInvariant().Replace("-", "_");
+        return normalized switch
+        {
+            "pending" => SubscriptionStatus.Pending,
+            "active" => SubscriptionStatus.Active,
+            "trial" => SubscriptionStatus.Trial,
+            "cancelled" or "canceled" => SubscriptionStatus.Cancelled,
+            "cancellation_pending" => SubscriptionStatus.CancellationPending,
+            "expired" => SubscriptionStatus.Expired,
+            _ => Enum.Parse<SubscriptionStatus>(computedStatus.Replace("_", ""), ignoreCase: true)
+        };
+    }
+
+    internal static string FormatStatus(SubscriptionStatus status) => status switch
+    {
+        SubscriptionStatus.CancellationPending => "cancellation_pending",
+        _ => status.ToString().ToLowerInvariant()
+    };
 }

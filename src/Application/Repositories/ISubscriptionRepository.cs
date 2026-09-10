@@ -13,6 +13,9 @@ public interface ISubscriptionRepository
     Task<List<SubscriptionStatusViewRecord>> FindByCustomerIdAsync(long customerId, SubscriptionFilterDto? filters = null);
     Task<SubscriptionStatusViewRecord?> FindByStripeIdAsync(string stripeSubscriptionId);
     Task<List<SubscriptionWithCustomerRecord>> FindAllAsync(SubscriptionFilterDto? filters = null);
+    Task<List<SubscriptionWithCustomerRecord>> FindDetailedAsync(
+        DetailedSubscriptionFilterDto filters,
+        Dictionary<string, object?>? resolvedFilters = null);
     Task<List<SubscriptionStatusViewRecord>> FindByIdsAsync(List<long> ids);
     
     // Update methods return table records (tracked, for modifications)

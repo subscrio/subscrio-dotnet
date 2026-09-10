@@ -13,6 +13,9 @@ public record UpdatePlanDto(
     string? DisplayName = null,
     string? Description = null,
     string? OnExpireTransitionToBillingCycleKey = null,
+    // When true, clears OnExpireTransitionToBillingCycleKey even if it is null.
+    // Omitted updates must leave the transition target unchanged.
+    bool ClearOnExpireTransitionToBillingCycleKey = false,
     Dictionary<string, object?>? Metadata = null
 );
 

@@ -1,5 +1,6 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Subscrio.Core.Infrastructure.Database;
+using Subscrio.Core.Application.Errors;
 using BCrypt.Net;
 using Npgsql;
 
@@ -7,12 +8,16 @@ namespace Subscrio.Core.Infrastructure.Database;
 
 public class SchemaInstaller
 {
+    public const string CurrentSchemaVersion = "1.1.0";
+
     private readonly SubscrioDbContext _db;
 
     public SchemaInstaller(SubscrioDbContext db)
     {
         _db = db;
     }
+
+    private bool IsSqlServer => _db.Database.IsSqlServer();
 
     /// <summary>
     /// Install database schema using EF Core EnsureCreated
@@ -49,15 +54,7 @@ public class SchemaInstaller
                 lastException = ex;
                 
                 // Check if this is a transient connection error
-                bool isTransientError = ex is NpgsqlException ||
-                    ex is System.Net.Sockets.SocketException ||
-                    ex.Message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase) ||
-                    ex.Message.Contains("transient failure", StringComparison.OrdinalIgnoreCase) ||
-                    ex.InnerException is NpgsqlException ||
-                    ex.InnerException is System.Net.Sockets.SocketException ||
-                    (ex.InnerException?.Message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase) == true);
-                
-                if (!isTransientError)
+                if (!IsTransientError(ex))
                 {
                     // Not a transient error, rethrow immediately
                     throw;
@@ -95,7 +92,8 @@ public class SchemaInstaller
     }
 
     /// <summary>
-    /// Verify schema installation by checking if tables exist
+    /// Verify schema installation by checking if tables exist.
+    /// Returns null when the schema is missing; rethrows unexpected errors.
     /// </summary>
     public async Task<string?> VerifyAsync()
     {
@@ -109,85 +107,123 @@ public class SchemaInstaller
 
             return schemaVersion;
         }
-        catch
+        catch (Exception ex) when (IsSchemaMissingException(ex))
         {
             return null;
         }
     }
 
     /// <summary>
-    /// Run pending database migrations
+    /// Run pending database migrations and refresh versioned objects (e.g. subscription_status_view).
+    /// When no EF migrations exist, still recreates the view and bumps schema_version when needed.
     /// </summary>
     public async Task<int> MigrateAsync()
     {
         var pendingMigrations = await _db.Database.GetPendingMigrationsAsync();
-        var count = pendingMigrations.Count();
+        var efCount = pendingMigrations.Count();
+        var previousVersion = await VerifyAsync();
 
-        if (count > 0)
+        if (efCount > 0)
         {
             await _db.Database.MigrateAsync();
-            
-            // Recreate view after migrations to ensure it's up to date
-            await CreateSubscriptionStatusViewAsync();
-            
-            // Update schema version
-            await UpdateSchemaVersionAsync();
         }
 
-        return count;
+        // Always refresh the view so EnsureCreated installs stay current without EF migrations.
+        await CreateSubscriptionStatusViewAsync();
+        await UpdateSchemaVersionAsync();
+
+        if (efCount > 0)
+        {
+            return efCount;
+        }
+
+        // Count a versioned upgrade when the stored version differed (or was missing).
+        return previousVersion != CurrentSchemaVersion ? 1 : 0;
     }
 
     /// <summary>
-    /// Drop all database tables (WARNING: Destructive!)
+    /// Drop all database tables (WARNING: Destructive!).
+    /// When an admin passphrase hash exists, <paramref name="adminPassphrase"/> must match.
     /// </summary>
-    public async Task DropSchemaAsync()
+    public async Task DropSchemaAsync(string? adminPassphrase = null)
     {
-        // Drop view first
-        await _db.Database.ExecuteSqlRawAsync(@"
-            DROP VIEW IF EXISTS subscrio.subscription_status_view CASCADE;
-        ");
+        await VerifyAdminPassphraseAsync(adminPassphrase);
+
+        await DropSubscriptionStatusViewAsync();
         
         await _db.Database.EnsureDeletedAsync();
     }
 
+    private async Task VerifyAdminPassphraseAsync(string? adminPassphrase)
+    {
+        SystemConfigRecord? existingHash;
+        try
+        {
+            existingHash = await _db.SystemConfig
+                .Where(sc => sc.ConfigKey == "admin_passphrase_hash")
+                .FirstOrDefaultAsync();
+        }
+        catch (Exception ex) when (IsSchemaMissingException(ex))
+        {
+            // Schema may not exist yet
+            return;
+        }
+
+        if (existingHash == null || string.IsNullOrEmpty(existingHash.ConfigValue))
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(adminPassphrase) ||
+            !BCrypt.Net.BCrypt.Verify(adminPassphrase, existingHash.ConfigValue))
+        {
+            throw new ValidationException(
+                "Admin passphrase is required and must match the configured passphrase to drop the schema.");
+        }
+    }
+
+    private async Task DropSubscriptionStatusViewAsync()
+    {
+        if (IsSqlServer)
+        {
+            await _db.Database.ExecuteSqlRawAsync(@"
+                IF OBJECT_ID(N'subscrio.subscription_status_view', N'V') IS NOT NULL
+                    DROP VIEW subscrio.subscription_status_view;
+            ");
+        }
+        else
+        {
+            await _db.Database.ExecuteSqlRawAsync(@"
+                DROP VIEW IF EXISTS subscrio.subscription_status_view CASCADE;
+            ");
+        }
+    }
+
     private async Task CreateSubscriptionStatusViewAsync()
     {
-        // Drop view if exists
-        await _db.Database.ExecuteSqlRawAsync(@"
-            DROP VIEW IF EXISTS subscrio.subscription_status_view CASCADE;
-        ");
+        await DropSubscriptionStatusViewAsync();
 
-        // Create view
-        await _db.Database.ExecuteSqlRawAsync(@"
-            CREATE VIEW subscrio.subscription_status_view AS
-            SELECT
-                s.id,
-                s.key,
-                s.customer_id,
-                s.plan_id,
-                s.billing_cycle_id,
-                s.activation_date,
-                s.expiration_date,
-                s.cancellation_date,
-                s.trial_end_date,
-                s.current_period_start,
-                s.current_period_end,
-                s.stripe_subscription_id,
-                s.metadata,
-                s.created_at,
-                s.updated_at,
-                s.is_archived,
-                s.transitioned_at,
-                CASE
-                    WHEN s.cancellation_date IS NOT NULL AND s.cancellation_date > NOW() THEN 'cancellation_pending'
-                    WHEN s.cancellation_date IS NOT NULL AND s.cancellation_date <= NOW() THEN 'cancelled'
-                    WHEN s.expiration_date IS NOT NULL AND s.expiration_date <= NOW() THEN 'expired'
-                    WHEN s.activation_date IS NOT NULL AND s.activation_date > NOW() THEN 'pending'
-                    WHEN s.trial_end_date IS NOT NULL AND s.trial_end_date > NOW() THEN 'trial'
-                    ELSE 'active'
-                END AS computed_status
-            FROM subscrio.subscriptions s;
-        ");
+        var nowExpr = IsSqlServer ? "SYSUTCDATETIME()" : "NOW()";
+
+        // nowExpr is a fixed provider keyword, not user input
+        var createViewSql =
+            "CREATE VIEW subscrio.subscription_status_view AS " +
+            "SELECT " +
+            "s.id, s.key, s.customer_id, s.plan_id, s.billing_cycle_id, " +
+            "s.activation_date, s.expiration_date, s.cancellation_date, s.trial_end_date, " +
+            "s.current_period_start, s.current_period_end, s.stripe_subscription_id, " +
+            "s.metadata, s.created_at, s.updated_at, s.is_archived, s.transitioned_at, " +
+            "CASE " +
+            "WHEN s.cancellation_date IS NOT NULL AND s.cancellation_date > " + nowExpr + " THEN 'cancellation_pending' " +
+            "WHEN s.cancellation_date IS NOT NULL AND s.cancellation_date <= " + nowExpr + " THEN 'cancelled' " +
+            "WHEN s.expiration_date IS NOT NULL AND s.expiration_date <= " + nowExpr + " THEN 'expired' " +
+            "WHEN s.activation_date IS NOT NULL AND s.activation_date > " + nowExpr + " THEN 'pending' " +
+            "WHEN s.trial_end_date IS NOT NULL AND s.trial_end_date > " + nowExpr + " THEN 'trial' " +
+            "ELSE 'active' " +
+            "END AS computed_status " +
+            "FROM subscrio.subscriptions s;";
+
+        await _db.Database.ExecuteSqlRawAsync(createViewSql);
     }
 
     private async Task SetupInitialConfigAsync(string? adminPassphrase)
@@ -203,24 +239,23 @@ public class SchemaInstaller
             _db.SystemConfig.Add(new SystemConfigRecord
             {
                 ConfigKey = "schema_version",
-                ConfigValue = "1.1.0",
+                ConfigValue = CurrentSchemaVersion,
                 Encrypted = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
         }
 
-        // Set admin passphrase if provided
+        // Set admin passphrase only when none exists — never overwrite without verification
         if (!string.IsNullOrEmpty(adminPassphrase))
         {
             var existingPassphrase = await _db.SystemConfig
                 .Where(sc => sc.ConfigKey == "admin_passphrase_hash")
                 .FirstOrDefaultAsync();
 
-            var hashedPassphrase = BCrypt.Net.BCrypt.HashPassword(adminPassphrase);
-
             if (existingPassphrase == null)
             {
+                var hashedPassphrase = BCrypt.Net.BCrypt.HashPassword(adminPassphrase);
                 _db.SystemConfig.Add(new SystemConfigRecord
                 {
                     ConfigKey = "admin_passphrase_hash",
@@ -230,12 +265,7 @@ public class SchemaInstaller
                     UpdatedAt = DateTime.UtcNow
                 });
             }
-            else
-            {
-                existingPassphrase.ConfigValue = hashedPassphrase;
-                existingPassphrase.UpdatedAt = DateTime.UtcNow;
-                _db.SystemConfig.Update(existingPassphrase);
-            }
+            // Existing hash is left unchanged (DropSchemaAsync / destructive ops verify against it)
         }
 
         await _db.SaveChangesAsync();
@@ -249,12 +279,67 @@ public class SchemaInstaller
 
         if (version != null)
         {
-            // Update to current version (matches TypeScript version)
-            version.ConfigValue = "1.1.0";
+            version.ConfigValue = CurrentSchemaVersion;
             version.UpdatedAt = DateTime.UtcNow;
             _db.SystemConfig.Update(version);
             await _db.SaveChangesAsync();
         }
+        else
+        {
+            _db.SystemConfig.Add(new SystemConfigRecord
+            {
+                ConfigKey = "schema_version",
+                ConfigValue = CurrentSchemaVersion,
+                Encrypted = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync();
+        }
+    }
+
+    private static bool IsTransientError(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException!)
+        {
+            if (e is NpgsqlException || e is SqlException || e is System.Net.Sockets.SocketException)
+            {
+                return true;
+            }
+
+            if (e.Message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase) ||
+                e.Message.Contains("transient failure", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsSchemaMissingException(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException!)
+        {
+            if (e is PostgresException { SqlState: PostgresErrorCodes.UndefinedTable })
+            {
+                return true;
+            }
+
+            // SQL Server: Invalid object name (208)
+            if (e is SqlException sqlEx && sqlEx.Number == 208)
+            {
+                return true;
+            }
+
+            var message = e.Message;
+            if (message.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("Invalid object name", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
-

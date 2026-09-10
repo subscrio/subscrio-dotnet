@@ -47,7 +47,7 @@ dotnet add package Subscrio.Core
 Or add a package reference:
 
 ```xml
-<PackageReference Include="Subscrio.Core" Version="1.0.4" />
+<PackageReference Include="Subscrio.Core" Version="0.3.1" />
 ```
 
 **Prerequisites**
@@ -130,6 +130,7 @@ Public APIs use string **keys**, not internal IDs. DTOs live in `Subscrio.Core.A
 | `DATABASE_SSL` | No | `true` to enable SSL |
 | `DATABASE_POOL_SIZE` | No | Connection pool size (default: 10) |
 | `STRIPE_SECRET_KEY` | No | Stripe secret key for billing helpers |
+| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook endpoint secret (`whsec_...`) for `ConstructStripeEvent` |
 | `ADMIN_PASSPHRASE` | No | Default admin passphrase for schema install |
 | `LOG_LEVEL` | No | `debug`, `info`, `warn`, or `error` |
 
@@ -157,7 +158,7 @@ if (version == null)
 await subscrio.MigrateAsync();
 ```
 
-Other instance methods: `DropSchemaAsync()` (destructive; tests/dev only) and `RunInitialConfigSyncAsync()` (when `SubscrioConfig.InitialConfig` is set; `AddSubscrio()` runs this automatically if configured).
+Other instance methods: `DropSchemaAsync()` (destructive; tests/dev only) and `RunInitialConfigSyncAsync()` (when `SubscrioConfig.InitialConfig` is set). `AddSubscrio()` does **not** auto-install schema or run initial config sync — call those explicitly after building the host.
 
 ## Dependency injection
 
@@ -171,6 +172,17 @@ using Subscrio.Core.DependencyInjection;
 var config = ConfigLoader.LoadConfig(); // or build from IConfiguration
 builder.Services.AddSubscrio(config, ServiceLifetime.Scoped);
 
+var app = builder.Build();
+
+// If InitialConfig is set, install schema (when needed) then sync explicitly — do not rely on AddSubscrio
+using (var scope = app.Services.CreateScope())
+{
+    var subscrio = scope.ServiceProvider.GetRequiredService<Subscrio>();
+    if (await subscrio.VerifySchemaAsync() == null)
+        await subscrio.InstallSchemaAsync();
+    await subscrio.RunInitialConfigSyncAsync();
+}
+
 // Inject Subscrio in controllers, services, or minimal API handlers
 ```
 
@@ -178,18 +190,20 @@ Use `Transient` for console or worker apps that create their own scope per opera
 
 ## Stripe
 
-Subscrio does **not** verify webhook signatures. Verify events in your app, then pass them to `ProcessStripeEventAsync`.
+When `StripeConfig.WebhookSecret` is set (or `STRIPE_WEBHOOK_SECRET`), verify inbound webhooks with `ConstructStripeEvent`, then pass the event to `ProcessStripeEventAsync`. Without a webhook secret, verify signatures in your app before calling `ProcessStripeEventAsync`.
 
-Creating a Stripe subscription requires the customer to have `ExternalBillingId` set (Stripe customer ID):
+To let a customer subscribe via Stripe Checkout, use `CreateCheckoutSessionAsync` (the customer does not need `ExternalBillingId` beforehand — Checkout can create the Stripe customer). Sync resulting subscription changes through webhooks with `ProcessStripeEventAsync`.
 
 ```csharp
+// Prefer: verify via Subscrio when WebhookSecret is configured
+var stripeEvent = config.Stripe!.ConstructStripeEvent(json, signatureHeader);
 await subscrio.Stripe.ProcessStripeEventAsync(stripeEvent);
 
-await subscrio.Stripe.CreateStripeSubscriptionAsync(
+var (url, sessionId) = await subscrio.Stripe.CreateCheckoutSessionAsync(
     customerKey: customer.Key,
-    planKey: plan.Key,
     billingCycleKey: billingCycle.Key,
-    stripePriceId: "price_123"
+    successUrl: "https://example.com/success",
+    cancelUrl: "https://example.com/cancel"
 );
 ```
 
@@ -204,7 +218,7 @@ Full API reference, hooks, and extension guides live on [docs.subscrio.com](http
 - [Hooks](https://docs.subscrio.com/reference/hooks)
 - [How to extend](https://docs.subscrio.com/reference/how-to-extend)
 
-**Services on `Subscrio`:** `Products`, `Features`, `Plans`, `BillingCycles`, `Customers`, `Subscriptions`, `FeatureChecker`, `Stripe`, `Hooks`.
+**Services on `Subscrio`:** `Products`, `Features`, `Plans`, `BillingCycles`, `Customers`, `Subscriptions`, `FeatureChecker`, `ConfigSync`, `Stripe`, `Hooks`.
 
 Handle `ValidationException`, `NotFoundException`, and `ConflictException` from `Subscrio.Core.Application.Errors`.
 
