@@ -498,4 +498,75 @@ public class HooksTests : IDisposable
         off1();
         off2();
     }
+
+    [Fact]
+    public async Task CustomerCreated_After_Fires()
+    {
+        var events = new List<CustomerMutationHookEvent>();
+        var off = _subscrio.Hooks.OnCustomerCreatedAfter(async (evt, _) => events.Add(evt));
+
+        var key = $"hook-cust-aft-{Guid.NewGuid():N}";
+        await _subscrio.Customers.CreateCustomerAsync(new CreateCustomerDto(
+            Key: key,
+            DisplayName: "After Customer"
+        ));
+
+        events.Should().HaveCount(1);
+        events[0].Phase.Should().Be("after");
+        events[0].Source.Should().Be("api");
+        events[0].New!.Key.Should().Be(key);
+        events[0].Old.Should().BeNull();
+        off();
+    }
+
+    [Fact]
+    public async Task SubscriptionUpdated_After_Fires()
+    {
+        var product = await _fixtures.CreateProductAsync();
+        var plan = await _fixtures.CreatePlanAsync(product.Key);
+        var cycle = await _fixtures.CreateBillingCycleAsync(plan.Key);
+        var customer = await _fixtures.CreateCustomerAsync();
+
+        var subKey = $"hook-sub-upd-aft-{Guid.NewGuid():N}";
+        await _subscrio.Subscriptions.CreateSubscriptionAsync(new CreateSubscriptionDto(
+            Key: subKey,
+            CustomerKey: customer.Key,
+            BillingCycleKey: cycle.Key
+        ));
+
+        var events = new List<SubscriptionMutationHookEvent>();
+        var off = _subscrio.Hooks.OnSubscriptionUpdatedAfter(async (evt, _) => events.Add(evt));
+
+        await _subscrio.Subscriptions.UpdateSubscriptionAsync(
+            subKey,
+            new UpdateSubscriptionDto(Metadata: new Dictionary<string, object?> { ["note"] = "after" }));
+
+        events.Should().HaveCount(1);
+        events[0].Phase.Should().Be("after");
+        events[0].Source.Should().Be("api");
+        events[0].Old!.Key.Should().Be(subKey);
+        events[0].New!.Metadata.Should().ContainKey("note");
+        off();
+    }
+
+    [Fact]
+    public async Task Unsubscribe_Off_PreventsFurtherEvents()
+    {
+        var events = new List<CustomerMutationHookEvent>();
+        var off = _subscrio.Hooks.OnCustomerCreatedBefore(async (evt, _) => events.Add(evt));
+
+        await _subscrio.Customers.CreateCustomerAsync(new CreateCustomerDto(
+            Key: $"hook-off-1-{Guid.NewGuid():N}",
+            DisplayName: "First"
+        ));
+        events.Should().HaveCount(1);
+
+        off();
+
+        await _subscrio.Customers.CreateCustomerAsync(new CreateCustomerDto(
+            Key: $"hook-off-2-{Guid.NewGuid():N}",
+            DisplayName: "Second"
+        ));
+        events.Should().HaveCount(1);
+    }
 }

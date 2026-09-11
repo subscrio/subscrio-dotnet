@@ -19,7 +19,7 @@ public class TestFixtures
     {
         var key = overrides?.ContainsKey("Key") == true 
             ? overrides["Key"].ToString()! 
-            : $"product-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            : $"product-{Guid.NewGuid():N}";
 
         var dto = new CreateProductDto(
             Key: key,
@@ -41,7 +41,7 @@ public class TestFixtures
     {
         var key = overrides?.ContainsKey("Key") == true 
             ? overrides["Key"].ToString()! 
-            : $"feature-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            : $"feature-{Guid.NewGuid():N}";
 
         var dto = new CreateFeatureDto(
             Key: key,
@@ -75,7 +75,7 @@ public class TestFixtures
     {
         var key = overrides?.ContainsKey("Key") == true 
             ? overrides["Key"].ToString()! 
-            : $"customer-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            : $"customer-{Guid.NewGuid():N}";
 
         var dto = new CreateCustomerDto(
             Key: key,
@@ -100,7 +100,7 @@ public class TestFixtures
     {
         var key = overrides?.ContainsKey("Key") == true 
             ? overrides["Key"].ToString()! 
-            : $"plan-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            : $"plan-{Guid.NewGuid():N}";
 
         var dto = new CreatePlanDto(
             ProductKey: productKey,
@@ -126,7 +126,7 @@ public class TestFixtures
     {
         var key = overrides?.ContainsKey("Key") == true 
             ? overrides["Key"].ToString()! 
-            : $"billing-cycle-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+            : $"billing-cycle-{Guid.NewGuid():N}";
 
         int? durationValue = null;
         if (overrides?.ContainsKey("DurationValue") == true)
@@ -167,7 +167,7 @@ public class TestFixtures
         var dto = new CreateSubscriptionDto(
             Key: overrides?.ContainsKey("Key") == true 
                 ? overrides["Key"].ToString()! 
-                : $"sub-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+                : $"sub-{Guid.NewGuid():N}",
             CustomerKey: customerKey,
             BillingCycleKey: billingCycleKey,
             ActivationDate: overrides?.ContainsKey("ActivationDate") == true 

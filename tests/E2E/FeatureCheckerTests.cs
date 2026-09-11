@@ -566,5 +566,87 @@ public class FeatureCheckerTests : IDisposable
             activePlans.Should().NotContain(expiredPlan.Key);
         }
     }
+
+    public class CoverageGaps : FeatureCheckerTests
+    {
+        public CoverageGaps() : base() { }
+
+        [Fact]
+        public async Task SubscriptionAndCustomerFeatureApis_ResolveExpectedValues()
+        {
+            var suffix = Guid.NewGuid().ToString("N")[..8];
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = $"Coverage Product {suffix}"
+            });
+
+            var toggleFeature = await _fixtures.CreateFeatureAsync(new Dictionary<string, object>
+            {
+                ["Key"] = $"toggle-{suffix}",
+                ["DisplayName"] = "Coverage Toggle",
+                ["ValueType"] = "toggle",
+                ["DefaultValue"] = "false"
+            });
+            var numericFeature = await _fixtures.CreateFeatureAsync(new Dictionary<string, object>
+            {
+                ["Key"] = $"numeric-{suffix}",
+                ["DisplayName"] = "Coverage Numeric",
+                ["ValueType"] = "numeric",
+                ["DefaultValue"] = "5"
+            });
+
+            await _subscrio.Products.AssociateFeatureAsync(product.Key, toggleFeature.Key);
+            await _subscrio.Products.AssociateFeatureAsync(product.Key, numericFeature.Key);
+
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = $"Coverage Plan {suffix}"
+            });
+            await _subscrio.Plans.SetFeatureValueAsync(plan.Key, toggleFeature.Key, "true");
+            await _subscrio.Plans.SetFeatureValueAsync(plan.Key, numericFeature.Key, "42");
+
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Coverage Monthly",
+                ["DurationUnit"] = "months"
+            });
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = $"Coverage Customer {suffix}"
+            });
+            var subscription = await _fixtures.CreateSubscriptionAsync(customer.Key, billingCycle.Key);
+
+            var numericForSub = await _subscrio.FeatureChecker.GetValueForSubscriptionAsync<string>(
+                subscription.Key,
+                numericFeature.Key
+            );
+            numericForSub.Should().Be("42");
+
+            var allForSub = await _subscrio.FeatureChecker.GetAllFeaturesForSubscriptionAsync(subscription.Key);
+            allForSub.Should().ContainKey(toggleFeature.Key).WhoseValue.Should().Be("true");
+            allForSub.Should().ContainKey(numericFeature.Key).WhoseValue.Should().Be("42");
+
+            var toggleEnabledForSub = await _subscrio.FeatureChecker.IsEnabledForSubscriptionAsync(
+                subscription.Key,
+                toggleFeature.Key
+            );
+            toggleEnabledForSub.Should().BeTrue();
+
+            var toggleEnabledForCustomer = await _subscrio.FeatureChecker.IsEnabledForCustomerAsync(
+                customer.Key,
+                product.Key,
+                toggleFeature.Key
+            );
+            toggleEnabledForCustomer.Should().BeTrue();
+
+            var summary = await _subscrio.FeatureChecker.GetFeatureUsageSummaryAsync(
+                customer.Key,
+                product.Key
+            );
+            summary.ActiveSubscriptions.Should().BeGreaterThan(0);
+            summary.EnabledFeatures.Should().Contain(toggleFeature.Key);
+            summary.NumericFeatures.Should().ContainKey(numericFeature.Key).WhoseValue.Should().Be(42);
+        }
+    }
 }
 

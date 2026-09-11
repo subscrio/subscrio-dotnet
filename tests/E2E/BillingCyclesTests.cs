@@ -342,6 +342,45 @@ public class BillingCyclesTests : IDisposable
         }
 
         [Fact]
+        public async Task GetDefaultBillingCyclesAsync_ReturnsKnownDefaultsWhenPresent()
+        {
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Default Cycles Product"
+            });
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Default Cycles Plan"
+            });
+
+            // GetDefaultBillingCyclesAsync looks up fixed keys: monthly, quarterly, yearly
+            foreach (var (key, value, unit) in new[]
+                     {
+                         ("monthly", 1, "months"),
+                         ("quarterly", 3, "months"),
+                         ("yearly", 1, "years")
+                     })
+            {
+                var existing = await _subscrio.BillingCycles.GetBillingCycleAsync(key);
+                if (existing == null)
+                {
+                    await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+                    {
+                        ["Key"] = key,
+                        ["DisplayName"] = $"Default {key}",
+                        ["DurationValue"] = value,
+                        ["DurationUnit"] = unit
+                    });
+                }
+            }
+
+            var defaults = await _subscrio.BillingCycles.GetDefaultBillingCyclesAsync();
+
+            defaults.Should().NotBeEmpty();
+            defaults.Select(c => c.Key).Should().Contain(new[] { "monthly", "quarterly", "yearly" });
+        }
+
+        [Fact]
         public async Task DeletesArchivedBillingCycle()
         {
             var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>

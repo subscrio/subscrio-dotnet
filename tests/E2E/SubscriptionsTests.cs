@@ -676,6 +676,113 @@ public class SubscriptionsTests : IDisposable
             found.Should().NotContain(s => s.Key == withoutTrial.Key);
             found.Should().AllSatisfy(s => s.TrialEndDate.Should().NotBeNullOrEmpty());
         }
+
+        [Fact]
+        public async Task FindSubscriptionsWithBillingCycleKeyReturnsMatchingSubscriptions()
+        {
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "BillingCycle Filter Product"
+            });
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "BillingCycle Filter Plan"
+            });
+            var cycleA = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Cycle A",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+            var cycleB = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "Cycle B",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "BillingCycle Filter Customer"
+            });
+
+            var subA = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                cycleA.Key,
+                new Dictionary<string, object> { ["Key"] = $"sub-bc-a-{Guid.NewGuid():N}" }
+            );
+            var subB = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                cycleB.Key,
+                new Dictionary<string, object> { ["Key"] = $"sub-bc-b-{Guid.NewGuid():N}" }
+            );
+
+            var found = await _subscrio.Subscriptions.FindSubscriptionsAsync(new DetailedSubscriptionFilterDto(
+                CustomerKey: customer.Key,
+                BillingCycleKey: cycleA.Key
+            ));
+
+            found.Should().Contain(s => s.Key == subA.Key);
+            found.Should().NotContain(s => s.Key == subB.Key);
+            found.Should().AllSatisfy(s => s.BillingCycleKey.Should().Be(cycleA.Key));
+        }
+
+        [Fact]
+        public async Task FindSubscriptionsWithHasStripeIdTrueAndFalse()
+        {
+            var product = await _fixtures.CreateProductAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "HasStripeId Product"
+            });
+            var plan = await _fixtures.CreatePlanAsync(product.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "HasStripeId Plan"
+            });
+            var billingCycle = await _fixtures.CreateBillingCycleAsync(plan.Key, new Dictionary<string, object>
+            {
+                ["DisplayName"] = "HasStripeId Cycle",
+                ["DurationValue"] = 1,
+                ["DurationUnit"] = "months"
+            });
+            var customer = await _fixtures.CreateCustomerAsync(new Dictionary<string, object>
+            {
+                ["DisplayName"] = "HasStripeId Customer"
+            });
+
+            var withStripe = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-stripe-{Guid.NewGuid():N}",
+                    ["StripeSubscriptionId"] = $"sub_stripe_{Guid.NewGuid():N}"
+                }
+            );
+            var withoutStripe = await _fixtures.CreateSubscriptionAsync(
+                customer.Key,
+                billingCycle.Key,
+                new Dictionary<string, object>
+                {
+                    ["Key"] = $"sub-no-stripe-{Guid.NewGuid():N}"
+                }
+            );
+
+            var withStripeFound = await _subscrio.Subscriptions.FindSubscriptionsAsync(new DetailedSubscriptionFilterDto(
+                CustomerKey: customer.Key,
+                HasStripeId: true
+            ));
+            var withoutStripeFound = await _subscrio.Subscriptions.FindSubscriptionsAsync(new DetailedSubscriptionFilterDto(
+                CustomerKey: customer.Key,
+                HasStripeId: false
+            ));
+
+            withStripeFound.Should().Contain(s => s.Key == withStripe.Key);
+            withStripeFound.Should().NotContain(s => s.Key == withoutStripe.Key);
+            withStripeFound.Should().AllSatisfy(s => s.StripeSubscriptionId.Should().NotBeNullOrEmpty());
+
+            withoutStripeFound.Should().Contain(s => s.Key == withoutStripe.Key);
+            withoutStripeFound.Should().NotContain(s => s.Key == withStripe.Key);
+            withoutStripeFound.Should().AllSatisfy(s => s.StripeSubscriptionId.Should().BeNullOrEmpty());
+        }
     }
 }
 
