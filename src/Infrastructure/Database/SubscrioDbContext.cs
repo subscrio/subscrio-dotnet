@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Subscrio.Core.Domain.ValueObjects;
+using System.Text.Json;
 
 namespace Subscrio.Core.Infrastructure.Database;
 
@@ -28,9 +31,71 @@ public class SubscrioDbContext : DbContext
         // Apply all entity configurations
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(SubscrioDbContext).Assembly);
 
+        if (Database.IsSqlServer())
+        {
+            ConfigureSqlServerModel(modelBuilder);
+        }
+
         // Configure schema
         modelBuilder.HasDefaultSchema("subscrio");
     }
+
+    private static void ConfigureSqlServerModel(ModelBuilder modelBuilder)
+    {
+        ConfigureJsonProperty(modelBuilder.Entity<ProductRecord>().Property(record => record.Metadata));
+        ConfigureJsonProperty(modelBuilder.Entity<FeatureRecord>().Property(record => record.Validator));
+        ConfigureJsonProperty(modelBuilder.Entity<FeatureRecord>().Property(record => record.Metadata));
+        ConfigureJsonProperty(modelBuilder.Entity<PlanRecord>().Property(record => record.Metadata));
+        ConfigureJsonProperty(modelBuilder.Entity<CustomerRecord>().Property(record => record.Metadata));
+        ConfigureJsonProperty(modelBuilder.Entity<SubscriptionRecord>().Property(record => record.Metadata));
+        ConfigureJsonProperty(modelBuilder.Entity<SubscriptionStatusViewRecord>().Property(record => record.Metadata));
+
+        foreach (var property in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()))
+        {
+            if (property.GetColumnType() == "timestamp with time zone")
+            {
+                property.SetColumnType("datetime2");
+            }
+
+            if (property.GetDefaultValueSql() == "NOW()")
+            {
+                property.SetDefaultValueSql("SYSUTCDATETIME()");
+            }
+        }
+
+        // Subscrio services enforce deletion rules before records are removed. SQL Server
+        // rejects the PostgreSQL cascade graph because it contains multiple cascade paths.
+        foreach (var foreignKey in modelBuilder.Model.GetEntityTypes().SelectMany(entity => entity.GetForeignKeys()))
+        {
+            foreignKey.DeleteBehavior = DeleteBehavior.NoAction;
+        }
+    }
+
+    private static void ConfigureJsonProperty(
+        Microsoft.EntityFrameworkCore.Metadata.Builders.PropertyBuilder<Dictionary<string, object?>?> property)
+    {
+        var converter = new ValueConverter<Dictionary<string, object?>?, string?>(
+            value => SerializeDictionary(value),
+            value => DeserializeDictionary(value));
+
+        var comparer = new ValueComparer<Dictionary<string, object?>?>(
+            (left, right) => SerializeDictionary(left) == SerializeDictionary(right),
+            value => SerializeDictionary(value).GetHashCode(StringComparison.Ordinal),
+            value => DeserializeDictionary(SerializeDictionary(value)));
+
+        property
+            .HasConversion(converter)
+            .HasColumnType("nvarchar(max)")
+            .Metadata.SetValueComparer(comparer);
+    }
+
+    private static string SerializeDictionary(Dictionary<string, object?>? value) =>
+        value is null ? string.Empty : JsonSerializer.Serialize(value);
+
+    private static Dictionary<string, object?>? DeserializeDictionary(string? value) =>
+        string.IsNullOrEmpty(value)
+            ? null
+            : JsonSerializer.Deserialize<Dictionary<string, object?>>(value);
 }
 
 // Database record classes (snake_case properties)

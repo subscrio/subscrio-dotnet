@@ -204,12 +204,13 @@ public class SchemaInstaller
         await DropSubscriptionStatusViewAsync();
 
         var nowExpr = IsSqlServer ? "SYSUTCDATETIME()" : "NOW()";
+        var keyExpr = IsSqlServer ? "s.[key] AS [key]" : "s.key";
 
-        // nowExpr is a fixed provider keyword, not user input
+        // nowExpr and keyExpr are fixed provider-specific SQL fragments, not user input.
         var createViewSql =
             "CREATE VIEW subscrio.subscription_status_view AS " +
             "SELECT " +
-            "s.id, s.key, s.customer_id, s.plan_id, s.billing_cycle_id, " +
+            $"s.id, {keyExpr}, s.customer_id, s.plan_id, s.billing_cycle_id, " +
             "s.activation_date, s.expiration_date, s.cancellation_date, s.trial_end_date, " +
             "s.current_period_start, s.current_period_end, s.stripe_subscription_id, " +
             "s.metadata, s.created_at, s.updated_at, s.is_archived, s.transitioned_at, " +
