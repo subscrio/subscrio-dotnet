@@ -47,7 +47,7 @@ dotnet add package Subscrio.Core
 Or add a package reference:
 
 ```xml
-<PackageReference Include="Subscrio.Core" Version="0.3.1" />
+<PackageReference Include="Subscrio.Core" Version="0.4.0" />
 ```
 
 **Prerequisites**

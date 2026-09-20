@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TEST_DATABASE_URL: Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore Subscrio.Core.sln
+
+      - name: Build
+        run: dotnet build Subscrio.Core.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Subscrio.Core.sln --configuration Release --no-build
+
+      - name: Pack
+        run: dotnet pack src/Subscrio.Core.csproj --configuration Release --no-build --output artifacts

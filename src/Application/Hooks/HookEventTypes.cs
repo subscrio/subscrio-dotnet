@@ -35,6 +35,8 @@ public class StripeReceivedHookEvent
     public required string Phase { get; init; }
     public required string OccurredAt { get; init; }
     public required Event Data { get; init; }
+    public string? StripeCustomerId { get; init; }
+    public string? StripeSubscriptionId { get; init; }
 }
 
 public delegate Task CustomerHookHandler(CustomerMutationHookEvent evt, CancellationToken cancellationToken);

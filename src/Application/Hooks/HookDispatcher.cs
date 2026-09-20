@@ -257,13 +257,16 @@ public class HookDispatcher
 
         // Snapshot so handlers cannot mutate the live event used by ProcessStripeEventAsync
         var snapshot = CloneStripeEvent(stripeEvent);
+        var (stripeCustomerId, stripeSubscriptionId) = GetStripeEntityRefs(stripeEvent);
 
         var payload = new StripeReceivedHookEvent
         {
             Type = eventName,
             Phase = phase.ToWireValue(),
             OccurredAt = DateTime.UtcNow.ToString("O"),
-            Data = snapshot
+            Data = snapshot,
+            StripeCustomerId = stripeCustomerId,
+            StripeSubscriptionId = stripeSubscriptionId
         };
         foreach (var handler in _handlers[eventName].ToList())
         {
@@ -286,4 +289,28 @@ public class HookDispatcher
             return stripeEvent;
         }
     }
+
+    private static (string? CustomerId, string? SubscriptionId) GetStripeEntityRefs(
+        Stripe.Event stripeEvent)
+    {
+        var obj = stripeEvent.Data?.Object;
+        return obj switch
+        {
+            Stripe.Subscription subscription =>
+                (AsStripeId(subscription.CustomerId) ?? AsStripeId(subscription.Customer?.Id),
+                    AsStripeId(subscription.Id)),
+            Stripe.Invoice invoice =>
+                (AsStripeId(invoice.CustomerId) ?? AsStripeId(invoice.Customer?.Id),
+                    AsStripeId(invoice.Parent?.SubscriptionDetails?.SubscriptionId)
+                        ?? AsStripeId(invoice.Parent?.SubscriptionDetails?.Subscription?.Id)),
+            Stripe.Checkout.Session session =>
+                (AsStripeId(session.CustomerId) ?? AsStripeId(session.Customer?.Id),
+                    AsStripeId(session.SubscriptionId) ?? AsStripeId(session.Subscription?.Id)),
+            Stripe.Customer customer => (AsStripeId(customer.Id), null),
+            _ => (null, null)
+        };
+    }
+
+    private static string? AsStripeId(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 }
