@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
     <!-- Shared package / assembly version for Subscrio.Core -->
-    <SubscrioVersion>0.4.0</SubscrioVersion>
+    <SubscrioVersion>0.5.0</SubscrioVersion>
   </PropertyGroup>
 </Project>
