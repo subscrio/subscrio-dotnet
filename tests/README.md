@@ -17,11 +17,22 @@ Complete guide for testing Subscrio.Core using end-to-end tests with real Postgr
 
 ## Requirements
 
-- **.NET 8.0 SDK** - Required to build and run tests
+- **.NET 10 SDK** - Required to build and run the test project
 - **PostgreSQL 15+** - Installed and running locally
 - **Database Access** - User must have CREATEDB privilege
 
 ## Quick Start
+
+### SQL Server smoke test
+
+Set `SUBSCRIO_SQLSERVER_TEST_SERVER` to a SQL Server instance accessible with Windows authentication. The smoke test creates and removes a uniquely named database, so the account needs permission to create databases. Connection or schema errors fail the test; without this setting, the test is reported as skipped.
+
+```powershell
+$env:SUBSCRIO_SQLSERVER_TEST_SERVER = 'localhost'
+dotnet test tests/Subscrio.Core.Tests.csproj -c Release
+```
+
+The additional add-on, metering, credit, and migration tests use SQL Server when `SUBSCRIO_ENTITLEMENT_SQLSERVER=1`; that setting also enables the smoke test against `localhost` unless a server is specified above.
 
 ### 1. Install PostgreSQL
 

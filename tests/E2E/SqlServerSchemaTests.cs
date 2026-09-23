@@ -1,73 +1,70 @@
 using FluentAssertions;
-using Subscrio.Core;
+using Microsoft.Data.SqlClient;
 using Subscrio.Core.Config;
 using Subscrio.Core.Domain.ValueObjects;
 using Subscrio.Core.Infrastructure.Database;
-using Xunit;
 
 namespace Subscrio.Core.Tests.E2E;
 
-/// <summary>
-/// Smoke test for SQL Server LocalDB schema install/verify.
-/// Skips when LocalDB is not available on the machine.
-/// </summary>
+public sealed class SqlServerSmokeFactAttribute : FactAttribute
+{
+    public SqlServerSmokeFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SUBSCRIO_SQLSERVER_TEST_SERVER")) &&
+            Environment.GetEnvironmentVariable("SUBSCRIO_ENTITLEMENT_SQLSERVER") != "1")
+            Skip = "Set SUBSCRIO_SQLSERVER_TEST_SERVER to run against SQL Server with Windows authentication.";
+    }
+}
+
 public class SqlServerSchemaTests
 {
-    private const string LocalDbConnectionString =
-        "Server=(localdb)\\mssqllocaldb;Database=SubscrioSchemaSmoke;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true";
-
-    [Fact]
-    public async Task InstallAndVerifySchema_WorksOnLocalDb()
+    [SqlServerSmokeFact]
+    public async Task InstallAndVerifySchema_WorksOnSqlServer()
     {
-        Subscrio? subscrio = null;
+        var databaseName = "SubscrioSchemaSmoke_" + Guid.NewGuid().ToString("N");
+        var connection = new SqlConnectionStringBuilder
+        {
+            DataSource = Environment.GetEnvironmentVariable("SUBSCRIO_SQLSERVER_TEST_SERVER") ?? "localhost",
+            InitialCatalog = "master",
+            IntegratedSecurity = true,
+            TrustServerCertificate = true,
+            ConnectTimeout = 5,
+            ConnectRetryCount = 0,
+            Pooling = false
+        };
+        await using var admin = new SqlConnection(connection.ConnectionString);
+        await admin.OpenAsync();
+        await using (var create = admin.CreateCommand())
+        {
+            create.CommandText = $"CREATE DATABASE [{databaseName}]";
+            await create.ExecuteNonQueryAsync();
+        }
         try
         {
-            try
+            connection.InitialCatalog = databaseName;
+            using var subscrio = new Subscrio(new SubscrioConfig
             {
-                subscrio = new Subscrio(new SubscrioConfig
+                Database = new DatabaseConfig
                 {
-                    Database = new DatabaseConfig
-                    {
-                        ConnectionString = LocalDbConnectionString,
-                        Ssl = false,
-                        PoolSize = 2,
-                        DatabaseType = DatabaseType.SqlServer
-                    },
-                    AdminPassphrase = "localdb-smoke-passphrase"
-                });
-
-                // Probe connectivity before asserting — skip if LocalDB is unavailable
-                await subscrio.VerifySchemaAsync();
-            }
-            catch (Exception)
-            {
-                // Skip when LocalDB is not installed or cannot be reached
-                return;
-            }
-
-            await subscrio!.InstallSchemaAsync();
-            var version = await subscrio.VerifySchemaAsync();
-            version.Should().Be(SchemaInstaller.CurrentSchemaVersion);
-
+                    ConnectionString = connection.ConnectionString,
+                    DatabaseType = DatabaseType.SqlServer
+                },
+                AdminPassphrase = "schema-smoke-passphrase"
+            });
+            (await subscrio.VerifySchemaAsync()).Should().BeNull();
+            await subscrio.InstallSchemaAsync();
+            (await subscrio.VerifySchemaAsync()).Should().Be(SchemaInstaller.CurrentSchemaVersion);
             await subscrio.DropSchemaAsync();
-            var afterDrop = await subscrio.VerifySchemaAsync();
-            afterDrop.Should().BeNull();
+            await using var verifyDrop = admin.CreateCommand();
+            verifyDrop.CommandText = "SELECT DB_ID(@name)";
+            verifyDrop.Parameters.AddWithValue("@name", databaseName);
+            (await verifyDrop.ExecuteScalarAsync()).Should().Be(DBNull.Value);
         }
         finally
         {
-            try
-            {
-                if (subscrio != null)
-                {
-                    await subscrio.DropSchemaAsync();
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup
-            }
-
-            subscrio?.Dispose();
+            await using var drop = admin.CreateCommand();
+            drop.CommandText = $"IF DB_ID('{databaseName}') IS NOT NULL BEGIN ALTER DATABASE [{databaseName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{databaseName}]; END";
+            await drop.ExecuteNonQueryAsync();
         }
     }
 }
