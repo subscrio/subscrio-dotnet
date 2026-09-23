@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-23
+
+### Fixed
+
+- Preserve UTC timestamps when reading SQL Server records. Subscription period dates and other stored timestamps no longer shift by the host timezone.
+
 ## [0.5.0] - 2026-09-23
 
 ### Added
