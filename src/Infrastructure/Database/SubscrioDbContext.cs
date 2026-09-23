@@ -55,6 +55,11 @@ public class SubscrioDbContext : DbContext
             if (property.GetColumnType() == "timestamp with time zone")
             {
                 property.SetColumnType("datetime2");
+                // SQL Server datetime2 loses DateTime.Kind. These columns store UTC;
+                // restore that kind before DTO mapping or further date conversion.
+                property.SetValueConverter(new ValueConverter<DateTime, DateTime>(
+                    value => value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value,
+                    value => DateTime.SpecifyKind(value, DateTimeKind.Utc)));
             }
 
             if (property.GetDefaultValueSql() == "NOW()")
