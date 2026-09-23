@@ -2,6 +2,18 @@ namespace Subscrio.Core.Application.Hooks;
 
 public static class HookEvents
 {
+    public const string SubscriptionAddonAttachedBefore = "subscription.addonAttached.before";
+    public const string SubscriptionAddonAttachedAfter = "subscription.addonAttached.after";
+    public const string SubscriptionAddonDetachedBefore = "subscription.addonDetached.before";
+    public const string SubscriptionAddonDetachedAfter = "subscription.addonDetached.after";
+    public const string UsageReportedBefore = "usage.reported.before";
+    public const string UsageReportedAfter = "usage.reported.after";
+    public const string CreditConsumedBefore = "credit.consumed.before";
+    public const string CreditConsumedAfter = "credit.consumed.after";
+    public const string CreditGrantedBefore = "credit.granted.before";
+    public const string CreditGrantedAfter = "credit.granted.after";
+    public const string CreditAdjustedBefore = "credit.adjusted.before";
+    public const string CreditAdjustedAfter = "credit.adjusted.after";
     public const string CustomerCreatedBefore = "customer.created.before";
     public const string CustomerCreatedAfter = "customer.created.after";
     public const string CustomerUpdatedBefore = "customer.updated.before";

@@ -1,3 +1,4 @@
+using Subscrio.Core.Infrastructure.Repositories;
 using FluentValidation;
 using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Errors;
@@ -15,6 +16,12 @@ namespace Subscrio.Core.Application.Services;
 
 public class PlanManagementService
 {
+    internal CatalogReader? Catalog
+    {
+        get; set;
+    }
+    private async Task<PlanDto> EnrichAsync(PlanDto dto) => Catalog == null ? dto : dto with { Addons = await Catalog.AddonsAsync(dto.ProductKey) };
+
     private readonly IPlanRepository _planRepository;
     private readonly IProductRepository _productRepository;
     private readonly IFeatureRepository _featureRepository;
@@ -85,7 +92,7 @@ public class PlanManagementService
             var keys = await ResolvePlanKeysAsync(record);
             var featureValues = allFeatureValues.GetValueOrDefault(record.Id, new List<PlanFeatureValue>());
             var plan = PlanMapper.ToDomain(record, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey, featureValues);
-            planDtos.Add(PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey));
+            planDtos.Add(await EnrichAsync(PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey)));
         }
         return planDtos;
     }
@@ -134,7 +141,7 @@ public class PlanManagementService
 
         var keys = await ResolvePlanKeysAsync(savedRecord);
         var plan = PlanMapper.ToDomain(savedRecord, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey, featureValues);
-        return PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey);
+        return await EnrichAsync(PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey));
     }
 
     public async Task<PlanDto> UpdatePlanAsync(string planKey, UpdatePlanDto dto)
@@ -147,11 +154,11 @@ public class PlanManagementService
 
         // Load feature values before converting to domain
         var featureValues = await LoadPlanFeatureValuesAsync(record.Id);
-        
+
         // Convert to domain entity for business rule validation if needed
         var keys = await ResolvePlanKeysAsync(record);
         var plan = PlanMapper.ToDomain(record, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey, featureValues);
-        
+
         // Update properties
         if (dto.DisplayName != null)
         {
@@ -190,7 +197,7 @@ public class PlanManagementService
 
         var savedKeys = await ResolvePlanKeysAsync(savedRecord);
         var savedPlan = PlanMapper.ToDomain(savedRecord, savedKeys.ProductKey, savedKeys.OnExpireTransitionToBillingCycleKey, savedFeatureValues);
-        return PlanMapper.ToDto(savedPlan, savedKeys.ProductKey, savedKeys.OnExpireTransitionToBillingCycleKey);
+        return await EnrichAsync(PlanMapper.ToDto(savedPlan, savedKeys.ProductKey, savedKeys.OnExpireTransitionToBillingCycleKey));
     }
 
     public async Task<PlanDto?> GetPlanAsync(string planKey)
@@ -206,7 +213,7 @@ public class PlanManagementService
 
         var keys = await ResolvePlanKeysAsync(record);
         var plan = PlanMapper.ToDomain(record, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey, featureValues);
-        return PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey);
+        return await EnrichAsync(PlanMapper.ToDto(plan, keys.ProductKey, keys.OnExpireTransitionToBillingCycleKey));
     }
 
     public async Task<List<PlanDto>> ListPlansAsync(PlanFilterDto? filters = null)
@@ -363,7 +370,7 @@ public class PlanManagementService
                 ));
             }
         }
-        
+
         return dtos;
     }
 }

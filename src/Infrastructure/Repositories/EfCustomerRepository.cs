@@ -88,12 +88,16 @@ public class EfCustomerRepository : ICustomerRepository
 
     public async Task DeleteAsync(long id)
     {
-        var record = await _db.Customers.FindAsync(id);
-        if (record != null)
+        await AccountingDelete.Run(_db, async () =>
         {
-            _db.Customers.Remove(record);
-            await _db.SaveChangesAsync();
-        }
+            var record = await _db.Customers.FindAsync(id);
+            if (record != null)
+            {
+                // Let database foreign keys reject retained history before changing tracked relationships.
+                await _db.Customers.Where(customer => customer.Id == id).ExecuteDeleteAsync();
+                _db.Entry(record).State = EntityState.Detached;
+            }
+
+        });
     }
 }
-

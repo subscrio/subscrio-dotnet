@@ -9,6 +9,7 @@ public class SubscriptionFeatureOverrideConfiguration : IEntityTypeConfiguration
     {
         builder.ToTable("subscription_feature_overrides");
 
+        builder.Property(sfo => sfo.ExpiresAt).HasColumnName("expires_at").HasColumnType("timestamp with time zone");
         builder.HasKey(sfo => sfo.Id);
         builder.Property(sfo => sfo.Id)
             .HasColumnName("id")

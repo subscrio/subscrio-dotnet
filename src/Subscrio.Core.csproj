@@ -34,6 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Infrastructure/Database/EntitlementMigrations/*.json" />
     <InternalsVisibleTo Include="Subscrio.Core.Tests" />
   </ItemGroup>
 

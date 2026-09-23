@@ -32,7 +32,8 @@ public class EfProductRepository : IProductRepository
 
     public async Task<List<ProductRecord>> FindByIdsAsync(List<long> ids)
     {
-        if (ids.Count == 0) return new List<ProductRecord>();
+        if (ids.Count == 0)
+            return new List<ProductRecord>();
 
         return await _db.Products
             .Where(p => ids.Contains(p.Id))
@@ -51,7 +52,7 @@ public class EfProductRepository : IProductRepository
         if (!string.IsNullOrEmpty(filters?.Search))
         {
             var search = filters.Search;
-            query = query.Where(p => 
+            query = query.Where(p =>
                 EF.Functions.Like(p.DisplayName, $"%{search}%") ||
                 EF.Functions.Like(p.Key, $"%{search}%")
             );
@@ -61,7 +62,7 @@ public class EfProductRepository : IProductRepository
         {
             query = filters.SortBy switch
             {
-                "displayName" => filters.SortOrder == "desc" 
+                "displayName" => filters.SortOrder == "desc"
                     ? query.OrderByDescending(p => p.DisplayName)
                     : query.OrderBy(p => p.DisplayName),
                 "createdAt" => filters.SortOrder == "desc"
@@ -82,12 +83,16 @@ public class EfProductRepository : IProductRepository
 
     public async Task DeleteAsync(long id)
     {
-        var record = await _db.Products.FindAsync(id);
-        if (record != null)
+        await AccountingDelete.Run(_db, async () =>
         {
-            _db.Products.Remove(record);
-            await _db.SaveChangesAsync();
-        }
+            var record = await _db.Products.FindAsync(id);
+            if (record != null)
+            {
+                _db.Products.Remove(record);
+                await _db.SaveChangesAsync();
+            }
+
+        });
     }
 
     public async Task AssociateFeatureAsync(long productId, long featureId)
@@ -98,10 +103,13 @@ public class EfProductRepository : IProductRepository
 
         if (!exists)
         {
+            var feature = await _db.Features.FindAsync(featureId);
             _db.ProductFeatures.Add(new ProductFeatureRecord
             {
                 ProductId = productId,
                 FeatureId = featureId,
+                FeatureValueRule = feature?.ValueType is "numeric" or "metered" ? "additive" : feature?.ValueType == "toggle" ? "most_generous" : "override_wins",
+                SubscriptionRule = feature?.ValueType == "text" ? "override_wins" : "most_generous",
                 CreatedAt = DateHelper.Now()
             });
             await _db.SaveChangesAsync();
@@ -133,9 +141,9 @@ public class EfProductRepository : IProductRepository
         var product = await _db.Products
             .FirstOrDefaultAsync(p => p.Key == productKey);
 
-        if (product == null) return false;
+        if (product == null)
+            return false;
 
         return await _db.Plans.AnyAsync(p => p.ProductId == product.Id);
     }
 }
-

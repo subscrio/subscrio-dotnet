@@ -12,6 +12,19 @@ namespace Subscrio.Core.Application.Services;
 
 public class FeatureCheckerService
 {
+    internal FeatureResolutionQuery? ResolutionQuery
+    {
+        get; set;
+    }
+    public Task<FeatureValueExplanationDto> ExplainForCustomerAsync(string customerKey, string productKey, string featureKey) => ResolutionQuery!.ExplainAsync(customerKey, productKey, featureKey);
+    public async Task<FeatureValueExplanationDto> ExplainForSubscriptionAsync(string subscriptionKey, string featureKey)
+    {
+        var s = await SubscriptionRepository.FindByKeyAsync(subscriptionKey) ?? throw new NotFoundException("Subscription not found");
+        var p = await PlanRepository.FindByIdAsync(s.PlanId) ?? throw new NotFoundException("Plan not found");
+        var product = await ProductRepository.FindByIdAsync(p.ProductId) ?? throw new NotFoundException("Product not found");
+        var c = await CustomerRepository.FindByIdAsync(s.CustomerId) ?? throw new NotFoundException("Customer not found");
+        return await ResolutionQuery!.ExplainAsync(c.Key, product.Key, featureKey, subscriptionKey);
+    }
     private readonly FeatureValueResolver _resolver;
 
     public FeatureCheckerService(
@@ -30,11 +43,26 @@ public class FeatureCheckerService
         _resolver = new FeatureValueResolver();
     }
 
-    private ISubscriptionRepository SubscriptionRepository { get; }
-    private IPlanRepository PlanRepository { get; }
-    private IFeatureRepository FeatureRepository { get; }
-    private ICustomerRepository CustomerRepository { get; }
-    private IProductRepository ProductRepository { get; }
+    private ISubscriptionRepository SubscriptionRepository
+    {
+        get;
+    }
+    private IPlanRepository PlanRepository
+    {
+        get;
+    }
+    private IFeatureRepository FeatureRepository
+    {
+        get;
+    }
+    private ICustomerRepository CustomerRepository
+    {
+        get;
+    }
+    private IProductRepository ProductRepository
+    {
+        get;
+    }
 
     /// <summary>
     /// Get feature value for a specific subscription
@@ -77,7 +105,7 @@ public class FeatureCheckerService
         var plan = PlanMapper.ToDomain(planRecord, "", null, planFeatureValues);
         var subscription = SubscriptionMapper.ToDomain(subscriptionView, featureOverrides);
 
-        var value = _resolver.Resolve(feature, plan, subscription);
+        var value = ResolutionQuery != null ? (await ExplainForSubscriptionAsync(subscriptionKey, featureKey)).EffectiveValue : _resolver.Resolve(feature, plan, subscription);
         return ConvertFeatureValue(value, defaultValue);
     }
 
@@ -137,7 +165,7 @@ public class FeatureCheckerService
         foreach (var featureRecord in features)
         {
             var feature = FeatureMapper.ToDomain(featureRecord);
-            var value = _resolver.Resolve(feature, plan, subscription);
+            var value = ResolutionQuery != null ? (await ExplainForSubscriptionAsync(subscriptionKey, feature.Key)).EffectiveValue : _resolver.Resolve(feature, plan, subscription);
             resolved[feature.Key] = value;
         }
 
@@ -177,6 +205,8 @@ public class FeatureCheckerService
             return defaultValue ?? default;
         }
 
+        if (ResolutionQuery != null)
+            return ConvertFeatureValue((await ResolutionQuery.ExplainAsync(customerKey, productKey, featureKey)).EffectiveValue, defaultValue);
         var context = await LoadCustomerProductSubscriptionContextAsync(customer.Id, productKey);
         var featureDomain = FeatureMapper.ToDomain(feature);
 
@@ -257,6 +287,13 @@ public class FeatureCheckerService
         }
 
         var features = await FeatureRepository.FindByProductAsync(product.Id);
+        if (ResolutionQuery != null)
+        {
+            var result = new Dictionary<string, string>();
+            foreach (var f in features)
+                result[f.Key] = (await ResolutionQuery.ExplainAsync(customerKey, productKey, f.Key)).EffectiveValue;
+            return result;
+        }
         var context = await LoadCustomerProductSubscriptionContextAsync(customer.Id, productKey);
 
         if (context.ProductSubscriptions.Count == 0)
@@ -387,6 +424,7 @@ public class FeatureCheckerService
         var enabledFeatures = new List<string>();
         var disabledFeatures = new List<string>();
         var numericFeatures = new Dictionary<string, double>();
+        var meteredFeatures = new Dictionary<string, long>();
         var textFeatures = new Dictionary<string, string>();
 
         if (product == null)
@@ -423,6 +461,9 @@ public class FeatureCheckerService
                     }
 
                     break;
+                case FeatureValueType.Metered:
+                    meteredFeatures[featureKey] = long.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+                    break;
                 case FeatureValueType.Numeric:
                     if (double.TryParse(value, out var num))
                     {
@@ -442,7 +483,10 @@ public class FeatureCheckerService
             disabledFeatures,
             numericFeatures,
             textFeatures
-        );
+        )
+        {
+            MeteredFeatures = meteredFeatures
+        };
     }
 
     private async Task<List<SubscriptionStatusViewRecord>> LoadCustomerSubscriptionsAsync(long customerId)

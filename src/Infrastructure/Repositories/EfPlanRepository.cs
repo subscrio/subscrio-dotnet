@@ -36,7 +36,8 @@ public class EfPlanRepository : IPlanRepository
         var product = await _db.Products
             .FirstOrDefaultAsync(p => p.Key == productKey);
 
-        if (product == null) return new List<PlanRecord>();
+        if (product == null)
+            return new List<PlanRecord>();
 
         return await _db.Plans
             .Where(p => p.ProductId == product.Id)
@@ -52,7 +53,7 @@ public class EfPlanRepository : IPlanRepository
     public async Task<List<PlanRecord>> FindAllAsync(PlanFilterDto? filters = null)
     {
         var query = _db.Plans
-            
+
             .Join(_db.Products,
                 p => p.ProductId,
                 pr => pr.Id,
@@ -107,7 +108,8 @@ public class EfPlanRepository : IPlanRepository
 
     public async Task<List<PlanRecord>> FindByIdsAsync(List<long> ids)
     {
-        if (ids.Count == 0) return new List<PlanRecord>();
+        if (ids.Count == 0)
+            return new List<PlanRecord>();
 
         return await _db.Plans
             .Where(p => ids.Contains(p.Id))
@@ -116,12 +118,16 @@ public class EfPlanRepository : IPlanRepository
 
     public async Task DeleteAsync(long id)
     {
-        var record = await _db.Plans.FindAsync(id);
-        if (record != null)
+        await AccountingDelete.Run(_db, async () =>
         {
-            _db.Plans.Remove(record);
-            await _db.SaveChangesAsync();
-        }
+            var record = await _db.Plans.FindAsync(id);
+            if (record != null)
+            {
+                _db.Plans.Remove(record);
+                await _db.SaveChangesAsync();
+            }
+
+        });
     }
 
     public async Task<bool> HasBillingCyclesAsync(long planId)
@@ -132,10 +138,11 @@ public class EfPlanRepository : IPlanRepository
     public async Task<bool> HasPlanTransitionReferencesAsync(string billingCycleKey)
     {
         var billingCycle = await _db.BillingCycles
-            
+
             .FirstOrDefaultAsync(bc => bc.Key == billingCycleKey);
 
-        if (billingCycle == null) return false;
+        if (billingCycle == null)
+            return false;
 
         return await _db.Plans.AnyAsync(p => p.OnExpireTransitionToBillingCycleId == billingCycle.Id);
     }
@@ -144,7 +151,7 @@ public class EfPlanRepository : IPlanRepository
     {
         var existing = await _db.PlanFeatures
             .FirstOrDefaultAsync(pf => pf.PlanId == planId && pf.FeatureId == featureId);
-        
+
         if (existing != null)
         {
             // Update existing
@@ -170,7 +177,7 @@ public class EfPlanRepository : IPlanRepository
     {
         var record = await _db.PlanFeatures
             .FirstOrDefaultAsync(pf => pf.PlanId == planId && pf.FeatureId == featureId);
-        
+
         if (record != null)
         {
             _db.PlanFeatures.Remove(record);
@@ -182,7 +189,7 @@ public class EfPlanRepository : IPlanRepository
     {
         var record = await _db.PlanFeatures
             .FirstOrDefaultAsync(pf => pf.PlanId == planId && pf.FeatureId == featureId);
-        
+
         return record?.Value;
     }
 
@@ -194,4 +201,3 @@ public class EfPlanRepository : IPlanRepository
     }
 
 }
-

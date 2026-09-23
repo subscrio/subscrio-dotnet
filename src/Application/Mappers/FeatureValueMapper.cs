@@ -26,6 +26,7 @@ public static class FeatureValueMapper
             FeatureId = r.FeatureId,
             Value = r.Value,
             Type = Enum.Parse<OverrideType>(r.OverrideType, ignoreCase: true),
+            ExpiresAt = r.ExpiresAt,
             CreatedAt = r.CreatedAt
         }).ToList();
 }

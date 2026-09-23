@@ -4,7 +4,8 @@ public enum FeatureValueType
 {
     Toggle,
     Numeric,
-    Text
+    Text,
+    Metered
 }
 
 

@@ -31,27 +31,61 @@ public record UpdateSubscriptionDto(
 /// </summary>
 public class SubscriptionDto
 {
+    public List<SubscriptionAddonDto> Addons { get; set; } = [];
+    public List<FeatureOverrideDto> FeatureOverrides { get; set; } = new();
     public string Key { get; set; } = string.Empty;
     public string CustomerKey { get; set; } = string.Empty;
     public string ProductKey { get; set; } = string.Empty;
     public string PlanKey { get; set; } = string.Empty;
     public string BillingCycleKey { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
-    public bool IsArchived { get; set; }
-    public string? ActivationDate { get; set; }
-    public string? ExpirationDate { get; set; }
-    public string? CancellationDate { get; set; }
-    public string? TrialEndDate { get; set; }
-    public string? CurrentPeriodStart { get; set; }
-    public string? CurrentPeriodEnd { get; set; }
-    public string? StripeSubscriptionId { get; set; }
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public CustomerDto? Customer { get; set; }
+    public bool IsArchived
+    {
+        get; set;
+    }
+    public string? ActivationDate
+    {
+        get; set;
+    }
+    public string? ExpirationDate
+    {
+        get; set;
+    }
+    public string? CancellationDate
+    {
+        get; set;
+    }
+    public string? TrialEndDate
+    {
+        get; set;
+    }
+    public string? CurrentPeriodStart
+    {
+        get; set;
+    }
+    public string? CurrentPeriodEnd
+    {
+        get; set;
+    }
+    public string? StripeSubscriptionId
+    {
+        get; set;
+    }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public CustomerDto? Customer
+    {
+        get; set;
+    }
     public string CreatedAt { get; set; } = string.Empty;
     public string UpdatedAt { get; set; } = string.Empty;
 
     public SubscriptionDto Clone() => new()
     {
+        Addons = new(Addons),
+        FeatureOverrides = new(FeatureOverrides),
         Key = Key,
         CustomerKey = CustomerKey,
         ProductKey = ProductKey,
@@ -118,7 +152,10 @@ public record FeatureOverrideDto(
     long FeatureId,
     string Value,
     string Type,
-    string CreatedAt
+    string CreatedAt,
+    string? FeatureKey = null,
+    string? ExpiresAt = null,
+    bool IsActive = true
 );
 
 public record TransitionExpiredSubscriptionsReport(

@@ -101,152 +101,409 @@ public class SubscrioDbContext : DbContext
 // Database record classes (snake_case properties)
 public class ProductRecord
 {
-    public long Id { get; set; }
+    public long Id
+    {
+        get; set;
+    }
     public string Key { get; set; } = null!;
     public string DisplayName { get; set; } = null!;
-    public string? Description { get; set; }
+    public string? Description
+    {
+        get; set;
+    }
     public string Status { get; set; } = null!;
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 
 public class FeatureRecord
 {
-    public long Id { get; set; }
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public global::Subscrio.Core.Application.DTOs.MeteredFeatureConfigDto? MeteredConfig
+    {
+        get; set;
+    }
+    public long Id
+    {
+        get; set;
+    }
     public string Key { get; set; } = null!;
     public string DisplayName { get; set; } = null!;
-    public string? Description { get; set; }
+    public string? Description
+    {
+        get; set;
+    }
     public string ValueType { get; set; } = null!;
     public string DefaultValue { get; set; } = null!;
-    public string? GroupName { get; set; }
+    public string? GroupName
+    {
+        get; set;
+    }
     public string Status { get; set; } = null!;
-    public Dictionary<string, object?>? Validator { get; set; }
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public Dictionary<string, object?>? Validator
+    {
+        get; set;
+    }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 
 public class ProductFeatureRecord
 {
-    public long Id { get; set; }
-    public long ProductId { get; set; }
-    public long FeatureId { get; set; }
-    public DateTime CreatedAt { get; set; }
+    public string FeatureValueRule { get; set; } = "override_wins";
+    public string SubscriptionRule { get; set; } = "legacy";
+    public long Id
+    {
+        get; set;
+    }
+    public long ProductId
+    {
+        get; set;
+    }
+    public long FeatureId
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
 }
 
 public class PlanRecord
 {
-    public long Id { get; set; }
-    public long ProductId { get; set; }
+    public long Id
+    {
+        get; set;
+    }
+    public long ProductId
+    {
+        get; set;
+    }
     public string Key { get; set; } = null!;
     public string DisplayName { get; set; } = null!;
-    public string? Description { get; set; }
+    public string? Description
+    {
+        get; set;
+    }
     public string Status { get; set; } = null!;
-    public long? OnExpireTransitionToBillingCycleId { get; set; }
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public long? OnExpireTransitionToBillingCycleId
+    {
+        get; set;
+    }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 
 public class PlanFeatureRecord
 {
-    public long Id { get; set; }
-    public long PlanId { get; set; }
-    public long FeatureId { get; set; }
+    public long Id
+    {
+        get; set;
+    }
+    public long PlanId
+    {
+        get; set;
+    }
+    public long FeatureId
+    {
+        get; set;
+    }
     public string Value { get; set; } = null!;
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 
 public class CustomerRecord
 {
-    public long Id { get; set; }
+    public long Id
+    {
+        get; set;
+    }
     public string Key { get; set; } = null!;
-    public string? DisplayName { get; set; }
-    public string? Email { get; set; }
-    public string? ExternalBillingId { get; set; }
+    public string? DisplayName
+    {
+        get; set;
+    }
+    public string? Email
+    {
+        get; set;
+    }
+    public string? ExternalBillingId
+    {
+        get; set;
+    }
     public string Status { get; set; } = null!;
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 
 public class SubscriptionRecord
 {
-    public long Id { get; set; }
+    public long Id
+    {
+        get; set;
+    }
     public string Key { get; set; } = null!;
-    public long CustomerId { get; set; }
-    public long PlanId { get; set; }
-    public long BillingCycleId { get; set; }
-    public DateTime? ActivationDate { get; set; }
-    public DateTime? ExpirationDate { get; set; }
-    public DateTime? CancellationDate { get; set; }
-    public DateTime? TrialEndDate { get; set; }
-    public DateTime? CurrentPeriodStart { get; set; }
-    public DateTime? CurrentPeriodEnd { get; set; }
-    public string? StripeSubscriptionId { get; set; }
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
-    public bool IsArchived { get; set; }
-    public DateTime? TransitionedAt { get; set; }
+    public long CustomerId
+    {
+        get; set;
+    }
+    public long PlanId
+    {
+        get; set;
+    }
+    public long BillingCycleId
+    {
+        get; set;
+    }
+    public DateTime? ActivationDate
+    {
+        get; set;
+    }
+    public DateTime? ExpirationDate
+    {
+        get; set;
+    }
+    public DateTime? CancellationDate
+    {
+        get; set;
+    }
+    public DateTime? TrialEndDate
+    {
+        get; set;
+    }
+    public DateTime? CurrentPeriodStart
+    {
+        get; set;
+    }
+    public DateTime? CurrentPeriodEnd
+    {
+        get; set;
+    }
+    public string? StripeSubscriptionId
+    {
+        get; set;
+    }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
+    public bool IsArchived
+    {
+        get; set;
+    }
+    public DateTime? TransitionedAt
+    {
+        get; set;
+    }
 }
 
 public class SubscriptionStatusViewRecord
 {
-    public long Id { get; set; }
+    public long Id
+    {
+        get; set;
+    }
     public string Key { get; set; } = null!;
-    public long CustomerId { get; set; }
-    public long PlanId { get; set; }
-    public long BillingCycleId { get; set; }
-    public DateTime? ActivationDate { get; set; }
-    public DateTime? ExpirationDate { get; set; }
-    public DateTime? CancellationDate { get; set; }
-    public DateTime? TrialEndDate { get; set; }
-    public DateTime? CurrentPeriodStart { get; set; }
-    public DateTime? CurrentPeriodEnd { get; set; }
-    public string? StripeSubscriptionId { get; set; }
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
-    public bool IsArchived { get; set; }
-    public DateTime? TransitionedAt { get; set; }
+    public long CustomerId
+    {
+        get; set;
+    }
+    public long PlanId
+    {
+        get; set;
+    }
+    public long BillingCycleId
+    {
+        get; set;
+    }
+    public DateTime? ActivationDate
+    {
+        get; set;
+    }
+    public DateTime? ExpirationDate
+    {
+        get; set;
+    }
+    public DateTime? CancellationDate
+    {
+        get; set;
+    }
+    public DateTime? TrialEndDate
+    {
+        get; set;
+    }
+    public DateTime? CurrentPeriodStart
+    {
+        get; set;
+    }
+    public DateTime? CurrentPeriodEnd
+    {
+        get; set;
+    }
+    public string? StripeSubscriptionId
+    {
+        get; set;
+    }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
+    public bool IsArchived
+    {
+        get; set;
+    }
+    public DateTime? TransitionedAt
+    {
+        get; set;
+    }
     public string ComputedStatus { get; set; } = null!;
 }
 
 public class SubscriptionFeatureOverrideRecord
 {
-    public long Id { get; set; }
-    public long SubscriptionId { get; set; }
-    public long FeatureId { get; set; }
+    public long Id
+    {
+        get; set;
+    }
+    public long SubscriptionId
+    {
+        get; set;
+    }
+    public long FeatureId
+    {
+        get; set;
+    }
     public string Value { get; set; } = null!;
     public string OverrideType { get; set; } = null!;
-    public DateTime CreatedAt { get; set; }
+    public DateTime? ExpiresAt
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
 }
 
 public class BillingCycleRecord
 {
-    public long Id { get; set; }
-    public long PlanId { get; set; }
+    public long Id
+    {
+        get; set;
+    }
+    public long PlanId
+    {
+        get; set;
+    }
     public string Key { get; set; } = null!;
     public string DisplayName { get; set; } = null!;
-    public string? Description { get; set; }
+    public string? Description
+    {
+        get; set;
+    }
     public string Status { get; set; } = null!;
-    public int? DurationValue { get; set; }
+    public int? DurationValue
+    {
+        get; set;
+    }
     public string DurationUnit { get; set; } = null!;
-    public string? ExternalProductId { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public string? ExternalProductId
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 
 public class SystemConfigRecord
 {
-    public long Id { get; set; }
+    public long Id
+    {
+        get; set;
+    }
     public string ConfigKey { get; set; } = null!;
     public string ConfigValue { get; set; } = null!;
-    public bool Encrypted { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public bool Encrypted
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 

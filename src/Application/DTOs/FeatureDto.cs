@@ -8,7 +8,8 @@ public record CreateFeatureDto(
     string? Description = null,
     string? GroupName = null,
     Dictionary<string, object?>? Validator = null,
-    Dictionary<string, object?>? Metadata = null
+    Dictionary<string, object?>? Metadata = null,
+    MeteredFeatureConfigDto? MeteredConfig = null
 );
 
 public record UpdateFeatureDto(
@@ -18,7 +19,8 @@ public record UpdateFeatureDto(
     string? DefaultValue = null,
     string? GroupName = null,
     Dictionary<string, object?>? Validator = null,
-    Dictionary<string, object?>? Metadata = null
+    Dictionary<string, object?>? Metadata = null,
+    MeteredFeatureConfigDto? MeteredConfig = null
 );
 
 public record FeatureDto(
@@ -32,8 +34,12 @@ public record FeatureDto(
     Dictionary<string, object?>? Validator,
     Dictionary<string, object?>? Metadata,
     string CreatedAt,
-    string UpdatedAt
-);
+    string UpdatedAt,
+    MeteredFeatureConfigDto? MeteredConfig = null
+)
+{
+    public List<AddonDto> Addons { get; init; } = [];
+}
 
 public record FeatureFilterDto(
     string? Status = null,

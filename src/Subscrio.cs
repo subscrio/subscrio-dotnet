@@ -1,4 +1,6 @@
 using Npgsql;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Hooks;
 using Subscrio.Core.Application.Repositories;
@@ -29,25 +31,67 @@ public class Subscrio : IDisposable
     private readonly IBillingCycleRepository _billingCycleRepo;
 
     /// <summary>Product create/update/list and feature association.</summary>
-    public ProductManagementService Products { get; }
+    public AddonManagementService Addons
+    {
+        get;
+    }
+    public MeteringService Metering
+    {
+        get;
+    }
+    public CreditManagementService Credits
+    {
+        get;
+    }
+    public ProductManagementService Products
+    {
+        get;
+    }
     /// <summary>Feature catalog management.</summary>
-    public FeatureManagementService Features { get; }
+    public FeatureManagementService Features
+    {
+        get;
+    }
     /// <summary>Plan management and plan feature values.</summary>
-    public PlanManagementService Plans { get; }
+    public PlanManagementService Plans
+    {
+        get;
+    }
     /// <summary>Customer create/update/list and lifecycle.</summary>
-    public CustomerManagementService Customers { get; }
+    public CustomerManagementService Customers
+    {
+        get;
+    }
     /// <summary>Subscription create/update and period transitions.</summary>
-    public SubscriptionManagementService Subscriptions { get; }
+    public SubscriptionManagementService Subscriptions
+    {
+        get;
+    }
     /// <summary>Billing cycle management for plans.</summary>
-    public BillingCycleManagementService BillingCycles { get; }
+    public BillingCycleManagementService BillingCycles
+    {
+        get;
+    }
     /// <summary>Entitlement checks against active subscriptions.</summary>
-    public FeatureCheckerService FeatureChecker { get; }
+    public FeatureCheckerService FeatureChecker
+    {
+        get;
+    }
     /// <summary>Optional Stripe event processing and sync helpers.</summary>
-    public StripeIntegrationService Stripe { get; }
+    public StripeIntegrationService Stripe
+    {
+        get;
+    }
     /// <summary>Declarative config sync for products, features, plans, and billing cycles.</summary>
-    public ConfigSyncService ConfigSync { get; }
+    public ConfigSyncService ConfigSync
+    {
+        get;
+    }
     /// <summary>Before-mutation hook dispatcher registered from config.</summary>
-    public HookDispatcher Hooks { get; }
+    public HookDispatcher Hooks
+    {
+        get;
+    }
 
     /// <summary>
     /// Creates a Subscrio instance from configuration (database, optional Stripe, hooks, initial config).
@@ -61,7 +105,7 @@ public class Subscrio : IDisposable
         _installer = new SchemaInstaller(_db);
 
         _productRepo = new EfProductRepository(_db);
-        _featureRepo = new EfFeatureRepository(_db);
+        _featureRepo = new EfFeatureRepository(_db, config.Database);
         _planRepo = new EfPlanRepository(_db);
         _customerRepo = new EfCustomerRepository(_db);
         _subscriptionRepo = new EfSubscriptionRepository(_db);
@@ -70,6 +114,39 @@ public class Subscrio : IDisposable
         var hooks = new HookDispatcher(config.Hooks);
         Hooks = hooks;
 
+        var store = new DatabaseSession(config.Database);
+        var clock = config.Clock ?? new SystemClock();
+        var resolutionQuery = new FeatureResolutionQuery(store, clock);
+        Addons = new AddonManagementService(store);
+        Metering = new MeteringService(store, clock);
+        Credits = new CreditManagementService(store, clock);
+        var entitlementHooks = new TransactionHooks(hooks);
+        Metering.MutationHooks = entitlementHooks;
+        Credits.MutationHooks = entitlementHooks;
+        ((EfSubscriptionRepository)_subscriptionRepo).CoordinateSave = async (record, save) =>
+            await _db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                var originalId = record.Id;
+                await using var transaction = await _db.Database.BeginTransactionAsync();
+                var accounting = new DatabaseSession(config.Database, _db.Database.GetDbConnection(), transaction.GetDbTransaction());
+                using var ambient = accounting.EnterAmbient();
+                try
+                {
+                    var customer = await accounting.Require($"SELECT key FROM subscrio.customers WHERE id={record.CustomerId}", "Customer");
+                    await accounting.LockCustomer(customer.Text("key"));
+                    await Credits.PrepareSubscriptionChange(customer.Text("key"), record.Key, record.IsArchived, record.CancellationDate, record.ExpirationDate);
+                    if (record.Id != 0)
+                        _db.Entry(record).State = EntityState.Modified;
+                    var saved = await save();
+                    await Credits.ProcessScheduledGrantsAsync(customer.Text("key"));
+                    await transaction.CommitAsync();
+                    ambient.Dispose();
+                    await accounting.DispatchAfterCommit();
+                    return saved;
+                }
+                catch (CommittedOperationHookException) { throw; }
+                catch { await transaction.RollbackAsync(); _db.Entry(record).State = EntityState.Detached; record.Id = originalId; throw; }
+            });
         Products = new ProductManagementService(
             _productRepo,
             _featureRepo,
@@ -130,6 +207,15 @@ public class Subscrio : IDisposable
             _customerRepo,
             _productRepo
         );
+        Subscriptions.AddonService = new SubscriptionAddonManager(store) { MutationHooks = entitlementHooks };
+        var catalog = new CatalogReader(store);
+        Products.Catalog = catalog;
+        Features.Catalog = catalog;
+        Plans.Catalog = catalog;
+        Subscriptions.Catalog = catalog;
+        Products.Associations = new ProductFeatureRepository(store);
+        FeatureChecker.ResolutionQuery = resolutionQuery;
+        Subscriptions.Clock = clock;
         Stripe = new StripeIntegrationService(
             _subscriptionRepo,
             _customerRepo,
@@ -145,6 +231,7 @@ public class Subscrio : IDisposable
             Plans,
             BillingCycles
         );
+        ConfigSync.Owner = this;
         _initialConfig = config.InitialConfig;
         _adminPassphrase = config.AdminPassphrase;
     }
@@ -158,7 +245,8 @@ public class Subscrio : IDisposable
     /// <returns>The sync report, or null if no InitialConfig was set</returns>
     public async Task<ConfigSyncReport?> RunInitialConfigSyncAsync()
     {
-        if (_initialConfig == null) return null;
+        if (_initialConfig == null)
+            return null;
         if (!string.IsNullOrWhiteSpace(_initialConfig.FilePath))
             return await ConfigSync.SyncFromFileAsync(_initialConfig.FilePath);
         if (_initialConfig.Config != null)
@@ -217,4 +305,3 @@ public class Subscrio : IDisposable
         GC.SuppressFinalize(this);
     }
 }
-

@@ -29,7 +29,10 @@ public record PlanDto(
     Dictionary<string, object?>? Metadata,
     string CreatedAt,
     string UpdatedAt
-);
+)
+{
+    public List<AddonDto> Addons { get; init; } = [];
+}
 
 public record PlanFilterDto(
     string? ProductKey = null,

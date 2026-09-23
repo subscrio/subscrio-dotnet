@@ -10,6 +10,7 @@ public static class FeatureMapper
     public static FeatureDto ToDto(Feature feature)
     {
         return new FeatureDto(
+            MeteredConfig: feature.Props.MeteredConfig,
             Key: feature.Key,
             DisplayName: feature.DisplayName,
             Description: feature.Props.Description,
@@ -29,6 +30,7 @@ public static class FeatureMapper
         return new Feature(
             new FeatureProps
             {
+                MeteredConfig = record.MeteredConfig,
                 Key = record.Key,
                 DisplayName = record.DisplayName,
                 Description = record.Description,

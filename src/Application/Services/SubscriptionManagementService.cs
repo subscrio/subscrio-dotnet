@@ -1,3 +1,4 @@
+using Subscrio.Core.Infrastructure.Repositories;
 using FluentValidation;
 using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Errors;
@@ -16,6 +17,18 @@ namespace Subscrio.Core.Application.Services;
 
 public class SubscriptionManagementService
 {
+    internal CatalogReader? Catalog
+    {
+        get; set;
+    }
+    internal IClock Clock { get; set; } = new SystemClock();
+    internal SubscriptionAddonManager? AddonService
+    {
+        get; set;
+    }
+    public Task<SubscriptionAddonDto> AttachAddonAsync(string subscriptionKey, string addonKey, int quantity = 1) => AddonService!.AttachAddonAsync(subscriptionKey, addonKey, quantity);
+    public Task DetachAddonAsync(string subscriptionKey, string addonKey) => AddonService!.DetachAddonAsync(subscriptionKey, addonKey);
+    public Task<List<SubscriptionAddonDto>> GetAddonsAsync(string subscriptionKey, int limit = 50, int offset = 0) => AddonService!.ListSubscriptionAddonsAsync(subscriptionKey, limit, offset);
     private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly ICustomerRepository _customerRepository;
     private readonly IPlanRepository _planRepository;
@@ -59,13 +72,22 @@ public class SubscriptionManagementService
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
         var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
         var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
-        return SubscriptionMapper.ToDto(
+        var dto = SubscriptionMapper.ToDto(
             subscription,
             keys.CustomerKey,
             keys.ProductKey,
             keys.PlanKey,
             keys.BillingCycleKey
         );
+        foreach (var o in overrides)
+        {
+            var f = await _featureRepository.FindByIdAsync(o.FeatureId);
+            if (f != null)
+                dto.FeatureOverrides.Add(new(o.FeatureId, o.Value, o.Type.ToString().ToLowerInvariant(), DatabaseSession.Iso(o.CreatedAt), f.Key, o.ExpiresAt is DateTime expiry ? DatabaseSession.Iso(expiry) : null, o.ExpiresAt == null || o.ExpiresAt > Clock.UtcNow));
+        }
+        if (Catalog != null)
+            dto.Addons = await Catalog.SubscriptionAddonsAsync(dto.Key);
+        return dto;
     }
 
     private async Task<List<FeatureOverride>> LoadFeatureOverridesAsync(long subscriptionId)
@@ -310,15 +332,10 @@ public class SubscriptionManagementService
 
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
         var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
-        
+
         var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
-        var savedDto = SubscriptionMapper.ToDto(
-            subscription,
-            keys.CustomerKey,
-            keys.ProductKey,
-            keys.PlanKey,
-            keys.BillingCycleKey
-        );
+        var savedDto = await ToDtoAsync(viewRecord);
+
         await _hooks.EmitSubscriptionAfterAsync(
             HookEvents.SubscriptionCreatedAfter,
             HookSource.Api,
@@ -464,9 +481,9 @@ public class SubscriptionManagementService
 
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
         var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
-        
+
         var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
-        var savedDto = SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey);
+        var savedDto = await ToDtoAsync(viewRecord);
         await _hooks.EmitSubscriptionAfterAsync(
             HookEvents.SubscriptionUpdatedAfter,
             HookSource.Api,
@@ -480,13 +497,14 @@ public class SubscriptionManagementService
     public async Task<SubscriptionDto?> GetSubscriptionAsync(string subscriptionKey)
     {
         var viewRecord = await _subscriptionRepository.FindByKeyAsync(subscriptionKey);
-        if (viewRecord == null) return null;
+        if (viewRecord == null)
+            return null;
 
         var keys = await ResolveSubscriptionKeysAsync(viewRecord);
         var overrides = await LoadFeatureOverridesAsync(viewRecord.Id);
-        
+
         var subscription = SubscriptionMapper.ToDomain(viewRecord, overrides);
-        return SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey);
+        return await ToDtoAsync(viewRecord);
     }
 
     /// <summary>
@@ -739,17 +757,19 @@ public class SubscriptionManagementService
         {
             // Get keys for plan, product, billing cycle (customer is already available from join)
             var keys = await ResolveSubscriptionKeysAsync(result.Subscription);
-            
+
             // Convert CustomerRecord to domain entity for DTO mapping
-            var customerDto = result.Customer != null 
-                ? CustomerMapper.ToDto(CustomerMapper.ToDomain(result.Customer)) 
+            var customerDto = result.Customer != null
+                ? CustomerMapper.ToDto(CustomerMapper.ToDomain(result.Customer))
                 : null;
-            
+
             // Convert SubscriptionStatusViewRecord to domain entity for DTO mapping
             var overrideList = await LoadFeatureOverridesAsync(result.Subscription.Id);
             var subscription = SubscriptionMapper.ToDomain(result.Subscription, overrideList);
-            
-            dtos.Add(SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey, customerDto));
+
+            var dto = await ToDtoAsync(result.Subscription);
+            dto.Customer = customerDto;
+            dtos.Add(dto);
         }
         return dtos;
     }
@@ -798,17 +818,19 @@ public class SubscriptionManagementService
         foreach (var result in filteredResults)
         {
             var keys = await ResolveSubscriptionKeysAsync(result.Subscription);
-            
+
             // Convert CustomerRecord to domain entity for DTO mapping
-            var customerDto = result.Customer != null 
-                ? CustomerMapper.ToDto(CustomerMapper.ToDomain(result.Customer)) 
+            var customerDto = result.Customer != null
+                ? CustomerMapper.ToDto(CustomerMapper.ToDomain(result.Customer))
                 : null;
-            
+
             // Convert SubscriptionStatusViewRecord to domain entity for DTO mapping
             var overrideList = await LoadFeatureOverridesAsync(result.Subscription.Id);
             var subscription = SubscriptionMapper.ToDomain(result.Subscription, overrideList);
-            
-            dtos.Add(SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey, customerDto));
+
+            var dto = await ToDtoAsync(result.Subscription);
+            dto.Customer = customerDto;
+            dtos.Add(dto);
         }
         return dtos;
     }
@@ -829,7 +851,7 @@ public class SubscriptionManagementService
             var keys = await ResolveSubscriptionKeysAsync(subscriptionView);
             var overrides = await LoadFeatureOverridesAsync(subscriptionView.Id);
             var subscription = SubscriptionMapper.ToDomain(subscriptionView, overrides);
-            dtos.Add(SubscriptionMapper.ToDto(subscription, keys.CustomerKey, keys.ProductKey, keys.PlanKey, keys.BillingCycleKey));
+            dtos.Add(await ToDtoAsync(subscriptionView));
         }
         return dtos;
     }
@@ -954,11 +976,25 @@ public class SubscriptionManagementService
             null);
     }
 
+    private DateTime? ValidateExpiry(string type, DateTime? expiry)
+    {
+        if (type is not ("permanent" or "temporary" or "timed"))
+            throw new ValidationException("Invalid override type");
+        if (type != "timed")
+        {
+            if (expiry != null)
+                throw new ValidationException("Only timed overrides accept expiresAt");
+            return null;
+        }
+        if (expiry == null || expiry.Value.Kind == DateTimeKind.Unspecified || expiry.Value.ToUniversalTime() <= Clock.UtcNow)
+            throw new ValidationException("Timed overrides require a future expiry with a timezone");
+        return expiry.Value.ToUniversalTime();
+    }
     public async Task AddFeatureOverrideAsync(
         string subscriptionKey,
         string featureKey,
         string value,
-        OverrideType overrideType = OverrideType.Permanent)
+        OverrideType overrideType = OverrideType.Permanent, DateTime? expiresAt = null)
     {
         var subscriptionView = await _subscriptionRepository.FindByKeyAsync(subscriptionKey);
         if (subscriptionView == null)
@@ -988,7 +1024,8 @@ public class SubscriptionManagementService
         var oldDto = await ToDtoAsync(subscriptionView);
         var proposed = oldDto.Clone();
         proposed.UpdatedAt = DateHelper.Now().ToUniversalTime().ToString("O");
-        var overrideTypeWire = overrideType == OverrideType.Permanent ? "permanent" : "temporary";
+        var overrideTypeWire = overrideType.ToString().ToLowerInvariant();
+        ValidateExpiry(overrideTypeWire, expiresAt);
         var before = await _hooks.EmitSubscriptionBeforeAsync(
             HookEvents.SubscriptionFeatureOverrideAddedBefore,
             HookSource.Api,
@@ -998,7 +1035,7 @@ public class SubscriptionManagementService
             proposed,
             featureKey,
             value,
-            overrideTypeWire);
+            overrideTypeWire, expiresAt: expiresAt);
         var valueToApply = before?.Value ?? value;
         var typeToApply = before?.OverrideType ?? overrideTypeWire;
         if (before?.New != null)
@@ -1018,7 +1055,8 @@ public class SubscriptionManagementService
             subscriptionView.Id,
             featureRecord.Id,
             valueToApply,
-            typeToApply
+            typeToApply,
+            ValidateExpiry(typeToApply, before != null ? before.ExpiresAt : expiresAt)
         );
 
         var savedView = await _subscriptionRepository.FindByKeyAsync(subscriptionKey)
@@ -1032,7 +1070,7 @@ public class SubscriptionManagementService
             await ToDtoAsync(savedView),
             featureKey,
             valueToApply,
-            typeToApply);
+            typeToApply, expiresAt: before != null ? before.ExpiresAt : expiresAt);
     }
 
     public async Task RemoveFeatureOverrideAsync(string subscriptionKey, string featureKey)
@@ -1208,7 +1246,10 @@ public class SubscriptionManagementService
         {
             try
             {
-                report = report with { Processed = report.Processed + 1 };
+                report = report with
+                {
+                    Processed = report.Processed + 1
+                };
 
                 // Get the plan (already verified to have transition in query, but need it for the key)
                 var planRecord = await _planRepository.FindByIdAsync(expiredSubscription.PlanId);
@@ -1397,7 +1438,10 @@ public class SubscriptionManagementService
                         null,
                         await ToDtoAsync(savedNewView));
                 }
-                report = report with { Transitioned = report.Transitioned + 1 };
+                report = report with
+                {
+                    Transitioned = report.Transitioned + 1
+                };
 
                 // Archive old subscription only after replacement was created successfully
                 var oldArchivedDto = await ToDtoAsync(expiredSubscription);
@@ -1430,7 +1474,10 @@ public class SubscriptionManagementService
                         oldArchivedDto,
                         await ToDtoAsync(archivedView));
                 }
-                report = report with { Archived = report.Archived + 1 };
+                report = report with
+                {
+                    Archived = report.Archived + 1
+                };
             }
             catch (Exception error)
             {

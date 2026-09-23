@@ -21,7 +21,11 @@ public record ProductDto(
     Dictionary<string, object?>? Metadata,
     string CreatedAt,
     string UpdatedAt
-);
+)
+{
+    public List<AddonDto> Addons { get; init; } = [];
+    public List<ProductFeatureDto> Features { get; init; } = [];
+}
 
 public record ProductFilterDto(
     string? Status = null,
@@ -33,3 +37,5 @@ public record ProductFilterDto(
 );
 
 
+
+public record ProductFeatureDto(string FeatureKey, FeatureResolutionOptions Resolution);

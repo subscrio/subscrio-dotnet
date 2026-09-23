@@ -104,12 +104,15 @@ public class EfBillingCycleRepository : IBillingCycleRepository
 
     public async Task DeleteAsync(long id)
     {
-        var record = await _db.BillingCycles.FindAsync(id);
-        if (record != null)
+        await AccountingDelete.Run(_db, async () =>
         {
-            _db.BillingCycles.Remove(record);
-            await _db.SaveChangesAsync();
-        }
+            var record = await _db.BillingCycles.FindAsync(id);
+            if (record != null)
+            {
+                _db.BillingCycles.Remove(record);
+                await _db.SaveChangesAsync();
+            }
+
+        });
     }
 }
-

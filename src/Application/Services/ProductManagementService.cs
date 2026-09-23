@@ -1,3 +1,4 @@
+using Subscrio.Core.Infrastructure.Repositories;
 using FluentValidation;
 using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Errors;
@@ -15,6 +16,18 @@ namespace Subscrio.Core.Application.Services;
 
 public class ProductManagementService
 {
+    internal CatalogReader? Catalog
+    {
+        get; set;
+    }
+    private async Task<ProductDto> EnrichAsync(ProductDto dto) => Catalog == null ? dto : dto with { Addons = await Catalog.AddonsAsync(dto.Key), Features = await Catalog.ProductFeaturesAsync(dto.Key) };
+
+    internal ProductFeatureRepository? Associations
+    {
+        get; set;
+    }
+
+
     private readonly IProductRepository _productRepository;
     private readonly IFeatureRepository _featureRepository;
     private readonly CreateProductDtoValidator _createValidator;
@@ -65,7 +78,7 @@ public class ProductManagementService
         var savedRecord = await _productRepository.SaveAsync(record);
 
         var product = ProductMapper.ToDomain(savedRecord);
-        return ProductMapper.ToDto(product);
+        return await EnrichAsync(ProductMapper.ToDto(product));
     }
 
     public async Task<ProductDto> UpdateProductAsync(string key, UpdateProductDto dto)
@@ -105,16 +118,17 @@ public class ProductManagementService
         var savedRecord = await _productRepository.SaveAsync(record);
 
         var savedProduct = ProductMapper.ToDomain(savedRecord);
-        return ProductMapper.ToDto(savedProduct);
+        return await EnrichAsync(ProductMapper.ToDto(savedProduct));
     }
 
     public async Task<ProductDto?> GetProductAsync(string key)
     {
         var record = await _productRepository.FindByKeyAsync(key);
-        if (record == null) return null;
-        
+        if (record == null)
+            return null;
+
         var product = ProductMapper.ToDomain(record);
-        return ProductMapper.ToDto(product);
+        return await EnrichAsync(ProductMapper.ToDto(product));
     }
 
     public async Task<List<ProductDto>> ListProductsAsync(ProductFilterDto? filters = null)
@@ -126,7 +140,7 @@ public class ProductManagementService
         }
 
         var records = await _productRepository.FindAllAsync(filters ?? new ProductFilterDto());
-        return records.Select(r => ProductMapper.ToDto(ProductMapper.ToDomain(r))).ToList();
+        return (await Task.WhenAll(records.Select(r => EnrichAsync(ProductMapper.ToDto(ProductMapper.ToDomain(r)))))).ToList();
     }
 
     public async Task DeleteProductAsync(string key)
@@ -173,7 +187,7 @@ public class ProductManagementService
 
         var savedRecord = await _productRepository.SaveAsync(record);
         var product = ProductMapper.ToDomain(savedRecord);
-        return ProductMapper.ToDto(product);
+        return await EnrichAsync(ProductMapper.ToDto(product));
     }
 
     public async Task<ProductDto> UnarchiveProductAsync(string key)
@@ -191,10 +205,10 @@ public class ProductManagementService
 
         var savedRecord = await _productRepository.SaveAsync(record);
         var product = ProductMapper.ToDomain(savedRecord);
-        return ProductMapper.ToDto(product);
+        return await EnrichAsync(ProductMapper.ToDto(product));
     }
 
-    public async Task AssociateFeatureAsync(string productKey, string featureKey)
+    public async Task AssociateFeatureAsync(string productKey, string featureKey, FeatureResolutionOptions? resolution = null)
     {
         var productRecord = await _productRepository.FindByKeyAsync(productKey);
         if (productRecord == null)
@@ -208,7 +222,14 @@ public class ProductManagementService
             throw new NotFoundException($"Feature with key '{featureKey}' not found");
         }
 
-        await _productRepository.AssociateFeatureAsync(productRecord.Id, featureRecord.Id);
+        if (Associations != null)
+            await Associations.AssociateAsync(productKey, featureKey, resolution);
+        else
+        {
+            if (resolution != null)
+                throw new ValidationException("Feature resolution configuration requires an association repository");
+            await _productRepository.AssociateFeatureAsync(productRecord.Id, featureRecord.Id);
+        }
     }
 
     public async Task DissociateFeatureAsync(string productKey, string featureKey)

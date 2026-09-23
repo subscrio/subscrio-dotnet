@@ -11,10 +11,16 @@ namespace Subscrio.Core.Config;
 public class InitialConfigOptions
 {
     /// <summary>Path to a JSON config file to sync from. If set, sync runs from file.</summary>
-    public string? FilePath { get; init; }
+    public string? FilePath
+    {
+        get; init;
+    }
 
     /// <summary>Config object to sync from. Used when FilePath is not set.</summary>
-    public ConfigSyncDto? Config { get; init; }
+    public ConfigSyncDto? Config
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -22,27 +28,49 @@ public class InitialConfigOptions
 /// </summary>
 public class SubscrioConfig
 {
+    public IClock? Clock
+    {
+        get; init;
+    }
     /// <summary>Database connection and provider settings.</summary>
-    public required DatabaseConfig Database { get; init; }
+    public required DatabaseConfig Database
+    {
+        get; init;
+    }
 
     /// <summary>Optional passphrase for privileged schema operations (install/drop).</summary>
-    public string? AdminPassphrase { get; init; }
+    public string? AdminPassphrase
+    {
+        get; init;
+    }
 
     /// <summary>Optional Stripe API and webhook settings.</summary>
-    public StripeConfig? Stripe { get; init; }
+    public StripeConfig? Stripe
+    {
+        get; init;
+    }
 
     /// <summary>Optional logging level for library diagnostics.</summary>
-    public LoggingConfig? Logging { get; init; }
+    public LoggingConfig? Logging
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Optional initial config sync. If set, call RunInitialConfigSyncAsync() after construction to sync from file or JSON.
     /// </summary>
-    public InitialConfigOptions? InitialConfig { get; init; }
+    public InitialConfigOptions? InitialConfig
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Optional before-mutation hooks registered at construction time.
     /// </summary>
-    public SubscrioHooksOptions? Hooks { get; init; }
+    public SubscrioHooksOptions? Hooks
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -51,10 +79,16 @@ public class SubscrioConfig
 public class DatabaseConfig
 {
     /// <summary>EF Core / provider connection string.</summary>
-    public required string ConnectionString { get; init; }
+    public required string ConnectionString
+    {
+        get; init;
+    }
 
     /// <summary>Whether to require SSL for the database connection.</summary>
-    public bool Ssl { get; init; }
+    public bool Ssl
+    {
+        get; init;
+    }
 
     /// <summary>Connection pool size hint (default 10).</summary>
     public int PoolSize { get; init; } = 10;
@@ -69,13 +103,19 @@ public class DatabaseConfig
 public class StripeConfig
 {
     /// <summary>Stripe secret API key.</summary>
-    public required string SecretKey { get; init; }
+    public required string SecretKey
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Optional Stripe webhook endpoint secret (<c>whsec_...</c>).
     /// When set, use <see cref="ConstructStripeEvent"/> to verify signatures.
     /// </summary>
-    public string? WebhookSecret { get; init; }
+    public string? WebhookSecret
+    {
+        get; init;
+    }
 
     /// <summary>
     /// Verifies the Stripe webhook signature and constructs an <see cref="Stripe.Event"/>.

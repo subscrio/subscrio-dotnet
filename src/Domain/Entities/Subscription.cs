@@ -6,32 +6,99 @@ namespace Subscrio.Core.Domain.Entities;
 
 public class FeatureOverride
 {
-    public required long FeatureId { get; init; }
-    public required string Value { get; init; }
-    public required OverrideType Type { get; init; }
-    public required DateTime CreatedAt { get; init; }
+    public required long FeatureId
+    {
+        get; init;
+    }
+    public required string Value
+    {
+        get; init;
+    }
+    public required OverrideType Type
+    {
+        get; init;
+    }
+    public DateTime? ExpiresAt
+    {
+        get; init;
+    }
+    public required DateTime CreatedAt
+    {
+        get; init;
+    }
 }
 
 public class SubscriptionProps
 {
-    public required string Key { get; init; } // External reference key for this subscription
-    public required long CustomerId { get; set; }
-    public required long PlanId { get; set; }
-    public required long BillingCycleId { get; set; }
-    public required SubscriptionStatus Status { get; set; }
-    public required bool IsArchived { get; set; } // Archive flag - blocks updates but doesn't affect status calculation
-    public DateTime? ActivationDate { get; set; }
-    public DateTime? ExpirationDate { get; set; }
-    public DateTime? CancellationDate { get; set; }
-    public DateTime? TrialEndDate { get; set; }
-    public DateTime? CurrentPeriodStart { get; set; }
-    public DateTime? CurrentPeriodEnd { get; set; }
-    public string? StripeSubscriptionId { get; set; }
+    public required string Key
+    {
+        get; init;
+    } // External reference key for this subscription
+    public required long CustomerId
+    {
+        get; set;
+    }
+    public required long PlanId
+    {
+        get; set;
+    }
+    public required long BillingCycleId
+    {
+        get; set;
+    }
+    public required SubscriptionStatus Status
+    {
+        get; set;
+    }
+    public required bool IsArchived
+    {
+        get; set;
+    } // Archive flag - blocks updates but doesn't affect status calculation
+    public DateTime? ActivationDate
+    {
+        get; set;
+    }
+    public DateTime? ExpirationDate
+    {
+        get; set;
+    }
+    public DateTime? CancellationDate
+    {
+        get; set;
+    }
+    public DateTime? TrialEndDate
+    {
+        get; set;
+    }
+    public DateTime? CurrentPeriodStart
+    {
+        get; set;
+    }
+    public DateTime? CurrentPeriodEnd
+    {
+        get; set;
+    }
+    public string? StripeSubscriptionId
+    {
+        get; set;
+    }
     public List<FeatureOverride> FeatureOverrides { get; init; } = new();
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public required DateTime CreatedAt { get; init; }
-    public required DateTime UpdatedAt { get; set; }
-    public DateTime? TransitionedAt { get; set; } // UTC datetime when subscription was transitioned to a new plan
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public required DateTime CreatedAt
+    {
+        get; init;
+    }
+    public required DateTime UpdatedAt
+    {
+        get; set;
+    }
+    public DateTime? TransitionedAt
+    {
+        get; set;
+    } // UTC datetime when subscription was transitioned to a new plan
 }
 
 public class Subscription : Entity<SubscriptionProps>
@@ -127,7 +194,7 @@ public class Subscription : Entity<SubscriptionProps>
         Props.UpdatedAt = DateTime.UtcNow;
     }
 
-    public void AddFeatureOverride(long featureId, string value, OverrideType type)
+    public void AddFeatureOverride(long featureId, string value, OverrideType type, DateTime? expiresAt = null)
     {
         // Remove existing override if present
         RemoveFeatureOverride(featureId);
@@ -137,6 +204,7 @@ public class Subscription : Entity<SubscriptionProps>
             FeatureId = featureId,
             Value = value,
             Type = type,
+            ExpiresAt = expiresAt,
             CreatedAt = DateTime.UtcNow
         });
         Props.UpdatedAt = DateTime.UtcNow;
@@ -148,14 +216,14 @@ public class Subscription : Entity<SubscriptionProps>
         Props.UpdatedAt = DateTime.UtcNow;
     }
 
-    public FeatureOverride? GetFeatureOverride(long featureId)
+    public FeatureOverride? GetFeatureOverride(long featureId, DateTime? at = null)
     {
-        return Props.FeatureOverrides.Find(o => o.FeatureId == featureId);
+        return Props.FeatureOverrides.Find(o => o.FeatureId == featureId && (o.ExpiresAt == null || o.ExpiresAt > (at ?? DateTime.UtcNow)));
     }
 
     public void ClearTemporaryOverrides()
     {
-        Props.FeatureOverrides.RemoveAll(o => o.Type != OverrideType.Permanent);
+        Props.FeatureOverrides.RemoveAll(o => o.Type == OverrideType.Temporary);
         Props.UpdatedAt = DateTime.UtcNow;
     }
 
