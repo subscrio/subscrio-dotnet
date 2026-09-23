@@ -66,6 +66,7 @@ async Task Main()
         await RunPhase5_FeatureOverridesAsync(subscrio);
         await RunPhase6_SubscriptionRenewalAsync(subscrio);
         await RunPhase7_DowngradeToFreeAsync(subscrio);
+        await CatalogAccountingDemo.Run(config);
         await RunPhase8_SummaryAsync();
     }
     catch (Exception error)
@@ -712,7 +713,7 @@ async Task RunPhase5_FeatureOverridesAsync(SubscrioInstance subscrio)
 
     // Step 2: Add permanent override
     PrintStep(2, "Add Permanent Override");
-    PrintInfo("Customer purchases add-on for Gantt charts", 1);
+    PrintInfo("Customer receives a permanent override for Gantt charts", 1);
 
     Console.WriteLine("📥 Input: subscrio.Subscriptions.AddFeatureOverrideAsync(");
     Console.WriteLine("  \"acme-subscription\",");
@@ -799,7 +800,7 @@ async Task RunPhase7_DowngradeToFreeAsync(SubscrioInstance subscrio)
 
     // Step 1: Customer cancels subscription
     PrintStep(1, "Customer Cancels Subscription");
-    PrintInfo("Customer cancels professional subscription - status changes to cancellation_pending but remains active until period end", 1);
+    PrintInfo("Customer cancels the professional subscription effective immediately", 1);
 
     var cancellationDate = DateTime.UtcNow;
     Console.WriteLine("📥 Input: subscrio.Subscriptions.UpdateSubscriptionAsync(\"acme-subscription\", new UpdateSubscriptionDto(");
@@ -820,7 +821,7 @@ async Task RunPhase7_DowngradeToFreeAsync(SubscrioInstance subscrio)
         PrintInfo($"Status: {cancelledSubscription.Status}", 1);
         PrintInfo($"Cancellation date: {(cancelledSubscription.CancellationDate != null ? DateTime.Parse(cancelledSubscription.CancellationDate).ToString("yyyy-MM-dd") : "N/A")}", 1);
         PrintInfo($"Current period end: {(cancelledSubscription.CurrentPeriodEnd != null ? DateTime.Parse(cancelledSubscription.CurrentPeriodEnd).ToString("yyyy-MM-dd") : "N/A")}", 1);
-        PrintInfo("Note: Subscription remains active until period end date (cancellation_pending status)", 1);
+        PrintInfo("The cancellation date is now, so paid access has ended. Use a future cancellation date to schedule cancellation.", 1);
     }
 
     PrintDivider();
@@ -1016,7 +1017,8 @@ Task SleepAsync(int ms)
 
 async Task PromptForDatabaseInspectionAsync(string phase, string step)
 {
-    if (!isInteractiveMode) return;
+    if (!isInteractiveMode)
+        return;
 
     Console.WriteLine("\n" + new string('─', 63));
     Console.WriteLine($"🔍 INTERACTIVE MODE: {phase} - {step}");
@@ -1116,6 +1118,13 @@ async Task CleanupDemoEntitiesAsync(SubscrioInstance subscrio)
         await subscrio.Customers.DeleteCustomerAsync("acme-corp");
     }, "Deleting customer 'acme-corp'");
 
+    foreach (var planKey in new[] { "free", "starter", "professional", "enterprise" })
+    {
+        await TryAsync(
+            () => subscrio.Plans.UpdatePlanAsync(planKey, new UpdatePlanDto(ClearOnExpireTransitionToBillingCycleKey: true)),
+            $"Clearing demo plan transition '{planKey}'");
+    }
+
     foreach (var key in new[]
     {
         "free-forever", "starter-monthly", "starter-annual",
@@ -1173,4 +1182,3 @@ async Task CleanupDemoEntitiesAsync(SubscrioInstance subscrio)
     Console.WriteLine("✅ Demo entities cleanup completed");
     Console.WriteLine(new string('═', 50) + "\n");
 }
-

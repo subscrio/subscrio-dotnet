@@ -8,7 +8,7 @@ namespace Subscrio.Core.Infrastructure.Database;
 
 public class SchemaInstaller
 {
-    public const string CurrentSchemaVersion = "1.1.0";
+    public const string CurrentSchemaVersion = "1.4.0";
 
     private readonly SubscrioDbContext _db;
 
@@ -27,42 +27,42 @@ public class SchemaInstaller
         // Retry logic for transient connection issues
         int maxRetries = 3;
         Exception? lastException = null;
-        
+
         for (int attempt = 0; attempt < maxRetries; attempt++)
         {
             try
             {
                 // Check if schema already exists
                 var schemaExists = await VerifyAsync();
-                
+                if (schemaExists != null && Version.Parse(schemaExists) > Version.Parse(CurrentSchemaVersion))
+                    throw new ValidationException("Database schema is newer than this library");
+
                 if (schemaExists == null)
                 {
                     // Schema doesn't exist, create it
                     await _db.Database.EnsureCreatedAsync();
                 }
 
-                // Create the subscription status view
-                await CreateSubscriptionStatusViewAsync();
-
                 // Setup initial system configuration
                 await SetupInitialConfigAsync(adminPassphrase);
-                
+                await MigrateAsync();
+
                 return; // Success
             }
             catch (Exception ex) when (attempt < maxRetries - 1)
             {
                 lastException = ex;
-                
+
                 // Check if this is a transient connection error
                 if (!IsTransientError(ex))
                 {
                     // Not a transient error, rethrow immediately
                     throw;
                 }
-                
+
                 // Wait before retry (exponential backoff)
                 await Task.Delay(300 * (attempt + 1));
-                
+
                 // Reconnect if needed
                 try
                 {
@@ -82,7 +82,7 @@ public class SchemaInstaller
                 }
             }
         }
-        
+
         // If we get here, all retries failed - throw the last exception
         if (lastException != null)
         {
@@ -119,26 +119,41 @@ public class SchemaInstaller
     /// </summary>
     public async Task<int> MigrateAsync()
     {
-        var pendingMigrations = await _db.Database.GetPendingMigrationsAsync();
-        var efCount = pendingMigrations.Count();
-        var previousVersion = await VerifyAsync();
-
-        if (efCount > 0)
+        return await _db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
-            await _db.Database.MigrateAsync();
-        }
-
-        // Always refresh the view so EnsureCreated installs stay current without EF migrations.
-        await CreateSubscriptionStatusViewAsync();
-        await UpdateSchemaVersionAsync();
-
-        if (efCount > 0)
-        {
-            return efCount;
-        }
-
-        // Count a versioned upgrade when the stored version differed (or was missing).
-        return previousVersion != CurrentSchemaVersion ? 1 : 0;
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+            if (IsSqlServer)
+                await _db.Database.ExecuteSqlRawAsync("EXEC sp_getapplock @Resource='subscrio-schema', @LockMode='Exclusive', @LockOwner='Transaction'");
+            else
+                await _db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(1937072755)");
+            var previous = await VerifyAsync() ?? "1.1.0";
+            if (Version.Parse(previous) > Version.Parse(CurrentSchemaVersion))
+                throw new ValidationException("Database schema is newer than this library");
+            var assembly = typeof(SchemaInstaller).Assembly;
+            var suffix = "EntitlementMigrations." + (IsSqlServer ? "sqlserver" : "postgres") + ".json";
+            await using var stream = assembly.GetManifestResourceStream(assembly.GetManifestResourceNames().Single(n => n.EndsWith(suffix)))!;
+            var migrations = (await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<string, string[]>>(stream))!;
+            var count = 0;
+            if (Version.Parse(previous) < new Version("1.1.0"))
+            {
+                await _db.Database.ExecuteSqlRawAsync(IsSqlServer
+                    ? "IF COL_LENGTH('subscrio.subscriptions','transitioned_at') IS NULL ALTER TABLE subscrio.subscriptions ADD transitioned_at DATETIMEOFFSET NULL"
+                    : "ALTER TABLE subscrio.subscriptions ADD COLUMN IF NOT EXISTS transitioned_at TIMESTAMPTZ");
+                count++;
+            }
+            foreach (var (version, statements) in migrations)
+            {
+                if (Version.Parse(previous) >= Version.Parse(version))
+                    continue;
+                foreach (var statement in statements)
+                    await _db.Database.ExecuteSqlRawAsync(statement);
+                count++;
+            }
+            await CreateSubscriptionStatusViewAsync();
+            await UpdateSchemaVersionAsync();
+            await transaction.CommitAsync();
+            return count;
+        });
     }
 
     /// <summary>
@@ -150,7 +165,7 @@ public class SchemaInstaller
         await VerifyAdminPassphraseAsync(adminPassphrase);
 
         await DropSubscriptionStatusViewAsync();
-        
+
         await _db.Database.EnsureDeletedAsync();
     }
 
@@ -240,7 +255,7 @@ public class SchemaInstaller
             _db.SystemConfig.Add(new SystemConfigRecord
             {
                 ConfigKey = "schema_version",
-                ConfigValue = CurrentSchemaVersion,
+                ConfigValue = "1.1.0",
                 Encrypted = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow

@@ -5,32 +5,164 @@ namespace Subscrio.Core.Application.Hooks;
 /// </summary>
 public class SubscrioHooksOptions
 {
-    public CustomerHookHandler? OnCustomerCreatedBefore { get; init; }
-    public CustomerHookHandler? OnCustomerCreatedAfter { get; init; }
-    public CustomerHookHandler? OnCustomerUpdatedBefore { get; init; }
-    public CustomerHookHandler? OnCustomerUpdatedAfter { get; init; }
-    public CustomerHookHandler? OnCustomerArchivedBefore { get; init; }
-    public CustomerHookHandler? OnCustomerArchivedAfter { get; init; }
-    public CustomerHookHandler? OnCustomerUnarchivedBefore { get; init; }
-    public CustomerHookHandler? OnCustomerUnarchivedAfter { get; init; }
-    public CustomerHookHandler? OnCustomerDeletedBefore { get; init; }
-    public CustomerHookHandler? OnCustomerDeletedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionCreatedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionCreatedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionUpdatedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionUpdatedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionArchivedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionArchivedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionUnarchivedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionUnarchivedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionDeletedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionDeletedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideAddedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideAddedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideRemovedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideRemovedAfter { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionTemporaryOverridesClearedBefore { get; init; }
-    public SubscriptionHookHandler? OnSubscriptionTemporaryOverridesClearedAfter { get; init; }
-    public StripeReceivedHookHandler? OnStripeReceivedBefore { get; init; }
-    public StripeReceivedHookHandler? OnStripeReceivedAfter { get; init; }
+    public AccountingHookHandler? OnSubscriptionAddonAttachedBefore
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnSubscriptionAddonAttachedAfter
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnSubscriptionAddonDetachedBefore
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnSubscriptionAddonDetachedAfter
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnUsageReportedBefore
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnUsageReportedAfter
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnCreditConsumedBefore
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnCreditConsumedAfter
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnCreditGrantedBefore
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnCreditGrantedAfter
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnCreditAdjustedBefore
+    {
+        get; init;
+    }
+    public AccountingHookHandler? OnCreditAdjustedAfter
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerCreatedBefore
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerCreatedAfter
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerUpdatedBefore
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerUpdatedAfter
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerArchivedBefore
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerArchivedAfter
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerUnarchivedBefore
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerUnarchivedAfter
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerDeletedBefore
+    {
+        get; init;
+    }
+    public CustomerHookHandler? OnCustomerDeletedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionCreatedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionCreatedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionUpdatedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionUpdatedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionArchivedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionArchivedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionUnarchivedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionUnarchivedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionDeletedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionDeletedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideAddedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideAddedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideRemovedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionFeatureOverrideRemovedAfter
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionTemporaryOverridesClearedBefore
+    {
+        get; init;
+    }
+    public SubscriptionHookHandler? OnSubscriptionTemporaryOverridesClearedAfter
+    {
+        get; init;
+    }
+    public StripeReceivedHookHandler? OnStripeReceivedBefore
+    {
+        get; init;
+    }
+    public StripeReceivedHookHandler? OnStripeReceivedAfter
+    {
+        get; init;
+    }
 }

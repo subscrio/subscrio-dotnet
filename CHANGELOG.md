@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-23
+
+### Added
+
+- Product add-ons with feature values, subscription quantities, and additive or replacement behavior.
+- Rules for combining plan and add-on values within a subscription and allowances across subscriptions, with diagnostic explanations.
+- Metered features with calendar or billing-period resets, hard and soft limits, usage history, and idempotent reporting.
+- Customer credit wallets with grants, feature consumption costs, scheduled plan grants, expiration, and a transaction ledger.
+- Timed subscription feature overrides that stop applying at their expiration time.
+- Schema migrations through version 1.4.0 for PostgreSQL and SQL Server, including historical-upgrade and cross-language accounting verification.
+
+### Changed
+
+- Feature, product, plan, and subscription results include their related add-on data.
+- Feature create/update includes metered configuration; product-feature association accepts value calculation rules.
+- Configuration sync and export include add-ons, metering settings, credit rules, and subscription overrides.
+- Hooks cover add-on attachments, usage reporting, and credit operations. Console demos cover the new capabilities.
+
+### Upgrade
+
+- Back up existing databases and run `MigrateAsync()` before using the new capabilities. Upgrade applications sharing a database together.
+- Existing product-feature associations retain their previous value-selection behavior. Explicitly configure additive rules when enabling extra-capacity add-ons.
+- This is a core-only release. Extension and integration packages are not released at 0.5.0. Validate those packages separately before upgrading applications that use them.
+
 ## [0.4.0] - 2026-09-20
 
 ### Added

@@ -1,3 +1,8 @@
+using Microsoft.EntityFrameworkCore.Storage;
+using Subscrio.Core.Application.Services;
+using Subscrio.Core.Application.Errors;
+using Subscrio.Core.Config;
+using Subscrio.Core.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Subscrio.Core.Application.Repositories;
 using Subscrio.Core.Application.DTOs;
@@ -9,24 +14,72 @@ public class EfFeatureRepository : IFeatureRepository
 {
     private readonly SubscrioDbContext _db;
 
-    public EfFeatureRepository(SubscrioDbContext db)
+    public EfFeatureRepository(SubscrioDbContext db, DatabaseConfig? config = null)
     {
         _db = db;
+        Config = config ?? new()
+        {
+            ConnectionString = db.Database.GetDbConnection().ConnectionString,
+            DatabaseType = db.Database.IsSqlServer() ? DatabaseType.SqlServer : DatabaseType.PostgreSQL
+        };
     }
 
-    public Task<FeatureRecord> SaveAsync(FeatureRecord record) =>
-        EfSaveHelper.SaveAsync(_db, _db.Features, record, r => r.Id);
+    private DatabaseConfig Config
+    {
+        get;
+    }
+    private async Task<FeatureRecord?> Hydrate(FeatureRecord? record)
+    {
+        if (record?.ValueType == "metered")
+            record.MeteredConfig = await new MeteredConfigRepository(new DatabaseSession(Config)).GetMeteredConfigAsync(record.Key);
+        return record;
+    }
+    private async Task<List<FeatureRecord>> Hydrate(List<FeatureRecord> records)
+    {
+        foreach (var r in records)
+            await Hydrate(r);
+        return records;
+    }
+    public async Task<FeatureRecord> SaveAsync(FeatureRecord record)
+    {
+        if (record.ValueType == "metered" && record.MeteredConfig == null)
+            throw new ValidationException("Metered features require meteredConfig");
+        if (record.ValueType != "metered" && record.MeteredConfig != null)
+            throw new ValidationException("Only metered features accept meteredConfig");
+        if (record.MeteredConfig != null)
+            MeteredConfigRepository.ValidateConfig(record.MeteredConfig);
+        return await _db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            var store = new DatabaseSession(Config, _db.Database.GetDbConnection(), tx.GetDbTransaction());
+            if (record.Id != 0)
+            {
+                var old = await store.One($"SELECT value_type FROM subscrio.features WHERE id={record.Id}");
+                if (old?.Text("value_type") != record.ValueType && await store.One($"SELECT id FROM subscrio.usage_events WHERE feature_id={record.Id}") != null)
+                    throw new ValidationException("Cannot change feature type after usage is recorded");
+            }
+            if (record.Id != 0 && record.ValueType == "metered" && await store.One($"SELECT id FROM subscrio.credit_consumption_rules WHERE feature_id={record.Id}") != null)
+                throw new ValidationException("Remove credit consumption rules before changing to metered");
+            if (record.Id != 0 && record.ValueType == "text")
+                await store.Rows($"UPDATE subscrio.product_features SET composition_rule='override_wins',cross_subscription_rule=CASE WHEN cross_subscription_rule='legacy' THEN 'legacy' ELSE 'override_wins' END WHERE feature_id={record.Id}");
+            await EfSaveHelper.SaveAsync(_db, _db.Features, record, r => r.Id);
+            if (record.MeteredConfig != null)
+                await new MeteredConfigRepository(store).SetMeteredConfigAsync(record.Key, record.MeteredConfig);
+            await tx.CommitAsync();
+            return record;
+        });
+    }
 
     public async Task<FeatureRecord?> FindByIdAsync(long id)
     {
-        return await _db.Features
-            .FirstOrDefaultAsync(f => f.Id == id);
+        return await Hydrate(await _db.Features
+            .FirstOrDefaultAsync(f => f.Id == id));
     }
 
     public async Task<FeatureRecord?> FindByKeyAsync(string key)
     {
-        return await _db.Features
-            .FirstOrDefaultAsync(f => f.Key == key);
+        return await Hydrate(await _db.Features
+            .FirstOrDefaultAsync(f => f.Key == key));
     }
 
     public async Task<List<FeatureRecord>> FindAllAsync(FeatureFilterDto? filters = null)
@@ -80,21 +133,22 @@ public class EfFeatureRepository : IFeatureRepository
             query = query.OrderBy(f => f.CreatedAt);
         }
 
-        return await query.ToListAsync();
+        return await Hydrate(await query.ToListAsync());
     }
 
     public async Task<List<FeatureRecord>> FindByIdsAsync(List<long> ids)
     {
-        if (ids.Count == 0) return new List<FeatureRecord>();
+        if (ids.Count == 0)
+            return new List<FeatureRecord>();
 
-        return await _db.Features
+        return await Hydrate(await _db.Features
             .Where(f => ids.Contains(f.Id))
-            .ToListAsync();
+            .ToListAsync());
     }
 
     public async Task<List<FeatureRecord>> FindByProductAsync(long productId)
     {
-        return await _db.Features
+        return await Hydrate(await _db.Features
             .Join(_db.ProductFeatures,
                 f => f.Id,
                 pf => pf.FeatureId,
@@ -102,17 +156,21 @@ public class EfFeatureRepository : IFeatureRepository
             .Where(x => x.ProductFeature.ProductId == productId)
             .Select(x => x.Feature)
             .OrderBy(f => f.CreatedAt)
-            .ToListAsync();
+            .ToListAsync());
     }
 
     public async Task DeleteAsync(long id)
     {
-        var record = await _db.Features.FindAsync(id);
-        if (record != null)
+        await AccountingDelete.Run(_db, async () =>
         {
-            _db.Features.Remove(record);
-            await _db.SaveChangesAsync();
-        }
+            var record = await _db.Features.FindAsync(id);
+            if (record != null)
+            {
+                _db.Features.Remove(record);
+                await _db.SaveChangesAsync();
+            }
+
+        });
     }
 
     public async Task<bool> HasProductAssociationsAsync(long featureId)
@@ -130,4 +188,3 @@ public class EfFeatureRepository : IFeatureRepository
         return await _db.SubscriptionFeatureOverrides.AnyAsync(sfo => sfo.FeatureId == featureId);
     }
 }
-

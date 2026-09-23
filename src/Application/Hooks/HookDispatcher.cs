@@ -18,7 +18,20 @@ public class HookDispatcher
 
     public HookDispatcher(SubscrioHooksOptions? options = null)
     {
-        if (options == null) return;
+        if (options == null)
+            return;
+        Register(options.OnSubscriptionAddonAttachedBefore, HookEvents.SubscriptionAddonAttachedBefore);
+        Register(options.OnSubscriptionAddonAttachedAfter, HookEvents.SubscriptionAddonAttachedAfter);
+        Register(options.OnSubscriptionAddonDetachedBefore, HookEvents.SubscriptionAddonDetachedBefore);
+        Register(options.OnSubscriptionAddonDetachedAfter, HookEvents.SubscriptionAddonDetachedAfter);
+        Register(options.OnUsageReportedBefore, HookEvents.UsageReportedBefore);
+        Register(options.OnUsageReportedAfter, HookEvents.UsageReportedAfter);
+        Register(options.OnCreditConsumedBefore, HookEvents.CreditConsumedBefore);
+        Register(options.OnCreditConsumedAfter, HookEvents.CreditConsumedAfter);
+        Register(options.OnCreditGrantedBefore, HookEvents.CreditGrantedBefore);
+        Register(options.OnCreditGrantedAfter, HookEvents.CreditGrantedAfter);
+        Register(options.OnCreditAdjustedBefore, HookEvents.CreditAdjustedBefore);
+        Register(options.OnCreditAdjustedAfter, HookEvents.CreditAdjustedAfter);
         Register(options.OnCustomerCreatedBefore, HookEvents.CustomerCreatedBefore);
         Register(options.OnCustomerCreatedAfter, HookEvents.CustomerCreatedAfter);
         Register(options.OnCustomerUpdatedBefore, HookEvents.CustomerUpdatedBefore);
@@ -51,7 +64,8 @@ public class HookDispatcher
 
     private void Register(object? handler, string eventName)
     {
-        if (handler == null) return;
+        if (handler == null)
+            return;
         if (!_handlers.TryGetValue(eventName, out var list))
         {
             list = new List<object>();
@@ -92,6 +106,29 @@ public class HookDispatcher
     public Action OnStripeReceivedBefore(StripeReceivedHookHandler handler) => On(HookEvents.StripeReceivedBefore, handler);
     public Action OnStripeReceivedAfter(StripeReceivedHookHandler handler) => On(HookEvents.StripeReceivedAfter, handler);
 
+    public Action OnSubscriptionAddonAttachedBefore(AccountingHookHandler handler) => On(HookEvents.SubscriptionAddonAttachedBefore, handler);
+    public Action OnSubscriptionAddonAttachedAfter(AccountingHookHandler handler) => On(HookEvents.SubscriptionAddonAttachedAfter, handler);
+    public Action OnSubscriptionAddonDetachedBefore(AccountingHookHandler handler) => On(HookEvents.SubscriptionAddonDetachedBefore, handler);
+    public Action OnSubscriptionAddonDetachedAfter(AccountingHookHandler handler) => On(HookEvents.SubscriptionAddonDetachedAfter, handler);
+    public Action OnUsageReportedBefore(AccountingHookHandler handler) => On(HookEvents.UsageReportedBefore, handler);
+    public Action OnUsageReportedAfter(AccountingHookHandler handler) => On(HookEvents.UsageReportedAfter, handler);
+    public Action OnCreditConsumedBefore(AccountingHookHandler handler) => On(HookEvents.CreditConsumedBefore, handler);
+    public Action OnCreditConsumedAfter(AccountingHookHandler handler) => On(HookEvents.CreditConsumedAfter, handler);
+    public Action OnCreditGrantedBefore(AccountingHookHandler handler) => On(HookEvents.CreditGrantedBefore, handler);
+    public Action OnCreditGrantedAfter(AccountingHookHandler handler) => On(HookEvents.CreditGrantedAfter, handler);
+    public Action OnCreditAdjustedBefore(AccountingHookHandler handler) => On(HookEvents.CreditAdjustedBefore, handler);
+    public Action OnCreditAdjustedAfter(AccountingHookHandler handler) => On(HookEvents.CreditAdjustedAfter, handler);
+    internal async Task EmitAccountingAsync(AccountingMutationHookEvent evt)
+    {
+        if (!_handlers.TryGetValue(evt.Type, out var handlers))
+            return;
+        foreach (var handler in handlers.ToArray())
+        if (handler is AccountingHookHandler typed)
+        {
+            var payload = evt.Phase == "before" ? evt : new AccountingMutationHookEvent { Type = evt.Type, Phase = evt.Phase, Source = evt.Source, OccurredAt = evt.OccurredAt, Input = (System.Text.Json.Nodes.JsonObject)evt.Input.DeepClone(), Result = evt.Result };
+            await typed(payload, default);
+        }
+    }
     private Action On(string eventName, object handler)
     {
         if (!_handlers.TryGetValue(eventName, out var list))
@@ -105,14 +142,16 @@ public class HookDispatcher
             if (_handlers.TryGetValue(eventName, out var current))
             {
                 current.Remove(handler);
-                if (current.Count == 0) _handlers.Remove(eventName);
+                if (current.Count == 0)
+                    _handlers.Remove(eventName);
             }
         };
     }
 
     public static T? CloneJson<T>(T? value)
     {
-        if (value == null) return default;
+        if (value == null)
+            return default;
         var json = JsonSerializer.Serialize(value, JsonOptions);
         return JsonSerializer.Deserialize<T>(json, JsonOptions);
     }
@@ -125,7 +164,8 @@ public class HookDispatcher
         CustomerDto? newDto,
         CancellationToken cancellationToken = default)
     {
-        if (!HasListeners(eventName)) return newDto;
+        if (!HasListeners(eventName))
+            return newDto;
         var payload = new CustomerMutationHookEvent
         {
             Type = eventName,
@@ -154,7 +194,8 @@ public class HookDispatcher
         CustomerDto? newDto,
         CancellationToken cancellationToken = default)
     {
-        if (!HasListeners(eventName)) return;
+        if (!HasListeners(eventName))
+            return;
         var payload = new CustomerMutationHookEvent
         {
             Type = eventName,
@@ -184,9 +225,11 @@ public class HookDispatcher
         string? featureKey = null,
         string? value = null,
         string? overrideType = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateTime? expiresAt = null)
     {
-        if (!HasListeners(eventName)) return null;
+        if (!HasListeners(eventName))
+            return null;
         var payload = new SubscriptionMutationHookEvent
         {
             Type = eventName,
@@ -199,7 +242,8 @@ public class HookDispatcher
             New = CloneJson(newDto),
             FeatureKey = featureKey,
             Value = value,
-            OverrideType = overrideType
+            OverrideType = overrideType,
+            ExpiresAt = expiresAt
         };
         foreach (var handler in _handlers[eventName].ToList())
         {
@@ -221,9 +265,11 @@ public class HookDispatcher
         string? featureKey = null,
         string? value = null,
         string? overrideType = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateTime? expiresAt = null)
     {
-        if (!HasListeners(eventName)) return;
+        if (!HasListeners(eventName))
+            return;
         var payload = new SubscriptionMutationHookEvent
         {
             Type = eventName,
@@ -236,7 +282,8 @@ public class HookDispatcher
             New = CloneJson(newDto),
             FeatureKey = featureKey,
             Value = value,
-            OverrideType = overrideType
+            OverrideType = overrideType,
+            ExpiresAt = expiresAt
         };
         foreach (var handler in _handlers[eventName].ToList())
         {
@@ -253,7 +300,8 @@ public class HookDispatcher
         Stripe.Event stripeEvent,
         CancellationToken cancellationToken = default)
     {
-        if (!HasListeners(eventName)) return;
+        if (!HasListeners(eventName))
+            return;
 
         // Snapshot so handlers cannot mutate the live event used by ProcessStripeEventAsync
         var snapshot = CloneStripeEvent(stripeEvent);

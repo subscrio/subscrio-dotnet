@@ -20,7 +20,7 @@ public class UpdateFeatureDtoValidator : AbstractValidator<UpdateFeatureDto>
             .WithMessage("Description too long");
 
         RuleFor(x => x.ValueType)
-            .Must(x => x == null || x == "toggle" || x == "numeric" || x == "text")
+            .Must(x => x == null || x == "toggle" || x == "numeric" || x == "text" || x == "metered")
             .WithMessage("ValueType must be 'toggle', 'numeric', or 'text'")
             .When(x => x.ValueType != null);
 

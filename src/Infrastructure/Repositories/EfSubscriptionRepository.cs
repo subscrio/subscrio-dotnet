@@ -14,8 +14,12 @@ public class EfSubscriptionRepository : ISubscriptionRepository
         _db = db;
     }
 
+    internal Func<SubscriptionRecord, Func<Task<SubscriptionRecord>>, Task<SubscriptionRecord>>? CoordinateSave
+    {
+        get; set;
+    }
     public Task<SubscriptionRecord> SaveAsync(SubscriptionRecord record) =>
-        EfSaveHelper.SaveAsync(_db, _db.Subscriptions, record, r => r.Id);
+        CoordinateSave != null ? CoordinateSave(record, () => EfSaveHelper.SaveAsync(_db, _db.Subscriptions, record, r => r.Id)) : EfSaveHelper.SaveAsync(_db, _db.Subscriptions, record, r => r.Id);
 
     // Read methods return view records (for display)
     public async Task<SubscriptionStatusViewRecord?> FindByIdAsync(long id)
@@ -233,7 +237,8 @@ public class EfSubscriptionRepository : ISubscriptionRepository
 
     public async Task<List<SubscriptionStatusViewRecord>> FindByIdsAsync(List<long> ids)
     {
-        if (ids.Count == 0) return new List<SubscriptionStatusViewRecord>();
+        if (ids.Count == 0)
+            return new List<SubscriptionStatusViewRecord>();
 
         return await _db.SubscriptionStatusView
             .Where(s => ids.Contains(s.Id))
@@ -256,8 +261,8 @@ public class EfSubscriptionRepository : ISubscriptionRepository
     public async Task<SubscriptionStatusViewRecord?> FindActiveByCustomerAndPlanAsync(long customerId, long planId)
     {
         return await _db.SubscriptionStatusView
-            .Where(s => 
-                s.CustomerId == customerId && 
+            .Where(s =>
+                s.CustomerId == customerId &&
                 s.PlanId == planId &&
                 (s.ComputedStatus.ToLower() == "active" || s.ComputedStatus.ToLower() == "trial"))
             .FirstOrDefaultAsync();
@@ -276,7 +281,7 @@ public class EfSubscriptionRepository : ISubscriptionRepository
     public async Task<List<SubscriptionStatusViewRecord>> FindExpiredWithTransitionPlansAsync(int? limit = null)
     {
         var query = _db.SubscriptionStatusView
-            .Where(s => 
+            .Where(s =>
                 s.ComputedStatus.ToLower() == "expired" &&
                 !s.IsArchived)
             .Join(_db.Plans,
@@ -303,17 +308,18 @@ public class EfSubscriptionRepository : ISubscriptionRepository
             .AnyAsync(sfo => sfo.SubscriptionId == subscriptionId);
     }
 
-    public async Task AddFeatureOverrideAsync(long subscriptionId, long featureId, string value, string overrideType)
+    public async Task AddFeatureOverrideAsync(long subscriptionId, long featureId, string value, string overrideType, DateTime? expiresAt = null)
     {
         // Check if override already exists
         var existing = await _db.SubscriptionFeatureOverrides
             .FirstOrDefaultAsync(sfo => sfo.SubscriptionId == subscriptionId && sfo.FeatureId == featureId);
-        
+
         if (existing != null)
         {
             // Update existing override
             existing.Value = value;
             existing.OverrideType = overrideType;
+            existing.ExpiresAt = expiresAt;
         }
         else
         {
@@ -324,10 +330,11 @@ public class EfSubscriptionRepository : ISubscriptionRepository
                 FeatureId = featureId,
                 Value = value,
                 OverrideType = overrideType,
+                ExpiresAt = expiresAt,
                 CreatedAt = DateTime.UtcNow
             });
         }
-        
+
         await _db.SaveChangesAsync();
     }
 
@@ -335,7 +342,7 @@ public class EfSubscriptionRepository : ISubscriptionRepository
     {
         var existing = await _db.SubscriptionFeatureOverrides
             .FirstOrDefaultAsync(sfo => sfo.SubscriptionId == subscriptionId && sfo.FeatureId == featureId);
-        
+
         if (existing != null)
         {
             _db.SubscriptionFeatureOverrides.Remove(existing);
@@ -355,7 +362,7 @@ public class EfSubscriptionRepository : ISubscriptionRepository
         var temporaryOverrides = await _db.SubscriptionFeatureOverrides
             .Where(sfo => sfo.SubscriptionId == subscriptionId && sfo.OverrideType == "temporary")
             .ToListAsync();
-        
+
         if (temporaryOverrides.Count > 0)
         {
             _db.SubscriptionFeatureOverrides.RemoveRange(temporaryOverrides);
@@ -365,11 +372,15 @@ public class EfSubscriptionRepository : ISubscriptionRepository
 
     public async Task DeleteAsync(long id)
     {
-        var record = await _db.Subscriptions.FindAsync(id);
-        if (record != null)
+        await AccountingDelete.Run(_db, async () =>
         {
-            _db.Subscriptions.Remove(record);
-            await _db.SaveChangesAsync();
-        }
+            var record = await _db.Subscriptions.FindAsync(id);
+            if (record != null)
+            {
+                _db.Subscriptions.Remove(record);
+                await _db.SaveChangesAsync();
+            }
+
+        });
     }
 }

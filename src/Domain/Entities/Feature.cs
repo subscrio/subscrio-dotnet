@@ -6,17 +6,54 @@ namespace Subscrio.Core.Domain.Entities;
 
 public class FeatureProps
 {
-    public required string Key { get; init; }
-    public required string DisplayName { get; set; }
-    public string? Description { get; set; }
-    public required FeatureValueType ValueType { get; init; }
-    public required string DefaultValue { get; set; }
-    public string? GroupName { get; set; }
-    public required FeatureStatus Status { get; set; }
-    public Dictionary<string, object?>? Validator { get; set; }
-    public Dictionary<string, object?>? Metadata { get; set; }
-    public required DateTime CreatedAt { get; init; }
-    public required DateTime UpdatedAt { get; set; }
+    public global::Subscrio.Core.Application.DTOs.MeteredFeatureConfigDto? MeteredConfig
+    {
+        get; set;
+    }
+    public required string Key
+    {
+        get; init;
+    }
+    public required string DisplayName
+    {
+        get; set;
+    }
+    public string? Description
+    {
+        get; set;
+    }
+    public required FeatureValueType ValueType
+    {
+        get; init;
+    }
+    public required string DefaultValue
+    {
+        get; set;
+    }
+    public string? GroupName
+    {
+        get; set;
+    }
+    public required FeatureStatus Status
+    {
+        get; set;
+    }
+    public Dictionary<string, object?>? Validator
+    {
+        get; set;
+    }
+    public Dictionary<string, object?>? Metadata
+    {
+        get; set;
+    }
+    public required DateTime CreatedAt
+    {
+        get; init;
+    }
+    public required DateTime UpdatedAt
+    {
+        get; set;
+    }
 }
 
 public class Feature : Entity<FeatureProps>

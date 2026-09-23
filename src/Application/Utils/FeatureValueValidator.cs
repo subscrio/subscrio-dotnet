@@ -56,6 +56,13 @@ public static class FeatureValueValidator
                     return false;
                 }
                 break;
+            case FeatureValueType.Metered:
+                if (!long.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var amount) || amount < 0 || amount > 9007199254740991)
+                {
+                    error = "Metered values must be nonnegative safe integers";
+                    return false;
+                }
+                break;
             case FeatureValueType.Text:
                 break;
             default:

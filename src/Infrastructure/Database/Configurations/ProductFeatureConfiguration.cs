@@ -9,6 +9,8 @@ public class ProductFeatureConfiguration : IEntityTypeConfiguration<ProductFeatu
     {
         builder.ToTable("product_features");
 
+        builder.Property(pf => pf.FeatureValueRule).HasColumnName("composition_rule").HasDefaultValue("override_wins");
+        builder.Property(pf => pf.SubscriptionRule).HasColumnName("cross_subscription_rule").HasDefaultValue("legacy");
         builder.HasKey(pf => pf.Id);
         builder.Property(pf => pf.Id)
             .HasColumnName("id")

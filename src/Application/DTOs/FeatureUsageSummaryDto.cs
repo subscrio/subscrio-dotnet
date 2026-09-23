@@ -6,6 +6,9 @@ public record FeatureUsageSummaryDto(
     List<string> DisabledFeatures,
     Dictionary<string, double> NumericFeatures,
     Dictionary<string, string> TextFeatures
-);
+ )
+{
+    public Dictionary<string, long> MeteredFeatures { get; init; } = new();
+}
 
 

@@ -1,3 +1,4 @@
+using Subscrio.Core.Infrastructure.Repositories;
 using FluentValidation;
 using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Application.Errors;
@@ -15,6 +16,12 @@ namespace Subscrio.Core.Application.Services;
 
 public class FeatureManagementService
 {
+    internal CatalogReader? Catalog
+    {
+        get; set;
+    }
+    private async Task<FeatureDto> EnrichAsync(FeatureDto dto) => Catalog == null ? dto : dto with { Addons = await Catalog.AddonsAsync(featureKey: dto.Key) };
+
     private readonly IFeatureRepository _featureRepository;
     private readonly IProductRepository _productRepository;
     private readonly CreateFeatureDtoValidator _createValidator;
@@ -54,6 +61,7 @@ public class FeatureManagementService
         // Create record from DTO
         var record = new FeatureRecord
         {
+            MeteredConfig = dto.MeteredConfig,
             Id = 0, // Will be set by EF Core
             Key = dto.Key,
             DisplayName = dto.DisplayName,
@@ -68,9 +76,11 @@ public class FeatureManagementService
             UpdatedAt = DateHelper.Now()
         };
 
+        if (dto.MeteredConfig != null)
+            record.MeteredConfig = dto.MeteredConfig;
         var savedRecord = await _featureRepository.SaveAsync(record);
         var feature = FeatureMapper.ToDomain(savedRecord);
-        return FeatureMapper.ToDto(feature);
+        return await EnrichAsync(FeatureMapper.ToDto(feature));
     }
 
     public async Task<FeatureDto> UpdateFeatureAsync(string key, UpdateFeatureDto dto)
@@ -134,18 +144,21 @@ public class FeatureManagementService
             record.UpdatedAt = DateHelper.Now();
         }
 
+        if (dto.MeteredConfig != null)
+            record.MeteredConfig = dto.MeteredConfig;
         var savedRecord = await _featureRepository.SaveAsync(record);
         var savedFeature = FeatureMapper.ToDomain(savedRecord);
-        return FeatureMapper.ToDto(savedFeature);
+        return await EnrichAsync(FeatureMapper.ToDto(savedFeature));
     }
 
     public async Task<FeatureDto?> GetFeatureAsync(string key)
     {
         var record = await _featureRepository.FindByKeyAsync(key);
-        if (record == null) return null;
-        
+        if (record == null)
+            return null;
+
         var feature = FeatureMapper.ToDomain(record);
-        return FeatureMapper.ToDto(feature);
+        return await EnrichAsync(FeatureMapper.ToDto(feature));
     }
 
     public async Task<List<FeatureDto>> ListFeaturesAsync(FeatureFilterDto? filters = null)
@@ -161,7 +174,7 @@ public class FeatureManagementService
         }
 
         var records = await _featureRepository.FindAllAsync(filterDto);
-        return records.Select(r => FeatureMapper.ToDto(FeatureMapper.ToDomain(r))).ToList();
+        return (await Task.WhenAll(records.Select(r => EnrichAsync(FeatureMapper.ToDto(FeatureMapper.ToDomain(r)))))).ToList();
     }
 
     public async Task ArchiveFeatureAsync(string key)
@@ -250,6 +263,6 @@ public class FeatureManagementService
         }
 
         var features = await _featureRepository.FindByProductAsync(product.Id);
-        return features.Select(r => FeatureMapper.ToDto(FeatureMapper.ToDomain(r))).ToList();
+        return (await Task.WhenAll(features.Select(r => EnrichAsync(FeatureMapper.ToDto(FeatureMapper.ToDomain(r)))))).ToList();
     }
 }

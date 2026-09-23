@@ -47,7 +47,7 @@ dotnet add package Subscrio.Core
 Or add a package reference:
 
 ```xml
-<PackageReference Include="Subscrio.Core" Version="0.4.0" />
+<PackageReference Include="Subscrio.Core" Version="0.5.0" />
 ```
 
 **Prerequisites**
@@ -65,7 +65,7 @@ using Subscrio.Core.Application.DTOs;
 using Subscrio.Core.Config;
 
 var config = ConfigLoader.LoadConfig();
-await using var subscrio = new Subscrio(config);
+using var subscrio = new Subscrio.Core.Subscrio(config);
 
 await subscrio.InstallSchemaAsync("your-admin-passphrase");
 
@@ -177,7 +177,7 @@ var app = builder.Build();
 // If InitialConfig is set, install schema (when needed) then sync explicitly — do not rely on AddSubscrio
 using (var scope = app.Services.CreateScope())
 {
-    var subscrio = scope.ServiceProvider.GetRequiredService<Subscrio>();
+    var subscrio = scope.ServiceProvider.GetRequiredService<Subscrio.Core.Subscrio>();
     if (await subscrio.VerifySchemaAsync() == null)
         await subscrio.InstallSchemaAsync();
     await subscrio.RunInitialConfigSyncAsync();
@@ -251,3 +251,9 @@ Issues and pull requests welcome in this repo. Org-wide guidelines: [CONTRIBUTIN
 <p align="center">
   Maintained by <a href="https://github.com/jasenf">Jasen Fici</a> · Part of the <a href="https://github.com/subscrio">Subscrio</a> org
 </p>
+
+## Add-ons, usage quotas, credits, and timed access
+
+Subscrio supports product-owned add-ons and composition, atomic metered quotas, shared credit wallets with scheduled grants and a ledger, and timed subscription overrides. Existing feature-checker calls resolve add-ons and active overrides automatically. Configure feature resolution on product-feature associations. Define add-on contributions through add-on create/update, configure meters through feature create/update, and read usage through the metering object.
+
+These capabilities require schema 1.4.0 and compatible library/server versions. See the [entitlement guide](https://docs.subscrio.com/reference/entitlements-guide/) and the console sample for the .NET walkthrough. The documentation repository includes runnable TypeScript and .NET examples. Back up and migrate existing databases before upgrading all writers together.

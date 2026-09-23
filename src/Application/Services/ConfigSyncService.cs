@@ -11,8 +11,12 @@ namespace Subscrio.Core.Application.Services;
 /// Syncs configuration from JSON files or programmatic DTOs to the database
 /// Uses public Subscrio API methods to ensure all business logic is reused
 /// </summary>
-public class ConfigSyncService
+public partial class ConfigSyncService
 {
+    internal Subscrio? Owner
+    {
+        get; set;
+    }
     public ConfigSyncService(
         ProductManagementService products,
         FeatureManagementService features,
@@ -25,10 +29,22 @@ public class ConfigSyncService
         BillingCycles = billingCycles;
     }
 
-    private ProductManagementService Products { get; }
-    private FeatureManagementService Features { get; }
-    private PlanManagementService Plans { get; }
-    private BillingCycleManagementService BillingCycles { get; }
+    private ProductManagementService Products
+    {
+        get;
+    }
+    private FeatureManagementService Features
+    {
+        get;
+    }
+    private PlanManagementService Plans
+    {
+        get;
+    }
+    private BillingCycleManagementService BillingCycles
+    {
+        get;
+    }
 
     /// <summary>
     /// Load configuration from a JSON file and sync
@@ -38,20 +54,20 @@ public class ConfigSyncService
         try
         {
             var fileContent = await File.ReadAllTextAsync(filePath);
-            
+
             // Validate JSON property order before parsing
             ValidateConfigJsonPropertyOrder(fileContent);
-            
+
             var jsonData = JsonSerializer.Deserialize<ConfigSyncDto>(fileContent, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
-            
+
             if (jsonData == null)
             {
                 throw new ValidationException("Failed to parse configuration file: JSON is null");
             }
-            
+
             return await SyncFromJsonAsync(jsonData);
         }
         catch (Exception error)
@@ -65,6 +81,9 @@ public class ConfigSyncService
     /// </summary>
     public async Task<ConfigSyncReport> SyncFromJsonAsync(ConfigSyncDto config)
     {
+        if (Owner != null)
+            await ValidateAccountingConfig.Validate(Owner, config);
+        var configurationBefore = Owner == null ? null : await ConfigExport.Capture(Owner, config);
         var report = new ConfigSyncReport(
             Created: new ConfigSyncCounts(0, 0, 0, 0),
             Updated: new ConfigSyncCounts(0, 0, 0, 0),
@@ -94,8 +113,8 @@ public class ConfigSyncService
             config.Products.SelectMany(p => p.Plans ?? new List<PlanConfig>()).Select(plan => plan.Key)
         );
         var configBillingCycleKeys = new HashSet<string>(
-            config.Products.SelectMany(p => 
-                (p.Plans ?? new List<PlanConfig>()).SelectMany(plan => 
+            config.Products.SelectMany(p =>
+                (p.Plans ?? new List<PlanConfig>()).SelectMany(plan =>
                     (plan.BillingCycles ?? new List<BillingCycleConfig>()).Select(bc => bc.Key)
                 )
             )
@@ -117,7 +136,7 @@ public class ConfigSyncService
             try
             {
                 featuresByKey.TryGetValue(featureConfig.Key, out var existing);
-                
+
                 if (existing == null)
                 {
                     // Create new feature
@@ -129,22 +148,29 @@ public class ConfigSyncService
                         featureConfig.Description,
                         featureConfig.GroupName,
                         featureConfig.Validator,
-                        featureConfig.Metadata
+                        featureConfig.Metadata,
+                        featureConfig.MeteredConfig
                     );
-                    
+
                     await Features.CreateFeatureAsync(createDto);
                     report = report with
                     {
-                        Created = report.Created with { Features = report.Created.Features + 1 }
+                        Created = report.Created with
+                        {
+                            Features = report.Created.Features + 1
+                        }
                     };
-                    
+
                     // Archive if needed
                     if (featureConfig.Archived == true)
                     {
                         await Features.ArchiveFeatureAsync(featureConfig.Key);
                         report = report with
                         {
-                            Archived = report.Archived with { Features = report.Archived.Features + 1 }
+                            Archived = report.Archived with
+                            {
+                                Features = report.Archived.Features + 1
+                            }
                         };
                     }
                 }
@@ -152,7 +178,7 @@ public class ConfigSyncService
                 {
                     // Check if entity needs updating
                     var needsUpdate = HasFeatureChanges(featureConfig, existing);
-                    
+
                     if (needsUpdate)
                     {
                         var updateDto = new UpdateFeatureDto(
@@ -162,16 +188,20 @@ public class ConfigSyncService
                             DefaultValue: featureConfig.DefaultValue,
                             GroupName: featureConfig.GroupName,
                             Validator: featureConfig.Validator,
+                            MeteredConfig: featureConfig.MeteredConfig,
                             Metadata: featureConfig.Metadata
                         );
-                        
+
                         await Features.UpdateFeatureAsync(featureConfig.Key, updateDto);
                         report = report with
                         {
-                            Updated = report.Updated with { Features = report.Updated.Features + 1 }
+                            Updated = report.Updated with
+                            {
+                                Features = report.Updated.Features + 1
+                            }
                         };
                     }
-                    
+
                     // Handle archive status
                     var isArchived = existing.Status == "archived";
                     if (featureConfig.Archived == true && !isArchived)
@@ -179,7 +209,10 @@ public class ConfigSyncService
                         await Features.ArchiveFeatureAsync(featureConfig.Key);
                         report = report with
                         {
-                            Archived = report.Archived with { Features = report.Archived.Features + 1 }
+                            Archived = report.Archived with
+                            {
+                                Features = report.Archived.Features + 1
+                            }
                         };
                     }
                     else if (featureConfig.Archived == false && isArchived)
@@ -187,7 +220,10 @@ public class ConfigSyncService
                         await Features.UnarchiveFeatureAsync(featureConfig.Key);
                         report = report with
                         {
-                            Unarchived = report.Unarchived with { Features = report.Unarchived.Features + 1 }
+                            Unarchived = report.Unarchived with
+                            {
+                                Features = report.Unarchived.Features + 1
+                            }
                         };
                     }
                 }
@@ -198,7 +234,10 @@ public class ConfigSyncService
                 {
                     new ConfigSyncError("feature", featureConfig.Key, error.Message)
                 };
-                report = report with { Errors = errors };
+                report = report with
+                {
+                    Errors = errors
+                };
             }
         }
 
@@ -208,7 +247,7 @@ public class ConfigSyncService
             try
             {
                 productsByKey.TryGetValue(productConfig.Key, out var existing);
-                
+
                 if (existing == null)
                 {
                     // Create new product
@@ -218,20 +257,26 @@ public class ConfigSyncService
                         productConfig.Description,
                         productConfig.Metadata
                     );
-                    
+
                     await Products.CreateProductAsync(createDto);
                     report = report with
                     {
-                        Created = report.Created with { Products = report.Created.Products + 1 }
+                        Created = report.Created with
+                        {
+                            Products = report.Created.Products + 1
+                        }
                     };
-                    
+
                     // Archive if needed
                     if (productConfig.Archived == true)
                     {
                         await Products.ArchiveProductAsync(productConfig.Key);
                         report = report with
                         {
-                            Archived = report.Archived with { Products = report.Archived.Products + 1 }
+                            Archived = report.Archived with
+                            {
+                                Products = report.Archived.Products + 1
+                            }
                         };
                     }
                 }
@@ -239,7 +284,7 @@ public class ConfigSyncService
                 {
                     // Check if entity needs updating
                     var needsUpdate = HasProductChanges(productConfig, existing);
-                    
+
                     if (needsUpdate)
                     {
                         var updateDto = new UpdateProductDto(
@@ -247,14 +292,17 @@ public class ConfigSyncService
                             Description: productConfig.Description,
                             Metadata: productConfig.Metadata
                         );
-                        
+
                         await Products.UpdateProductAsync(productConfig.Key, updateDto);
                         report = report with
                         {
-                            Updated = report.Updated with { Products = report.Updated.Products + 1 }
+                            Updated = report.Updated with
+                            {
+                                Products = report.Updated.Products + 1
+                            }
                         };
                     }
-                    
+
                     // Handle archive status
                     var isArchived = existing.Status == "archived";
                     if (productConfig.Archived == true && !isArchived)
@@ -262,7 +310,10 @@ public class ConfigSyncService
                         await Products.ArchiveProductAsync(productConfig.Key);
                         report = report with
                         {
-                            Archived = report.Archived with { Products = report.Archived.Products + 1 }
+                            Archived = report.Archived with
+                            {
+                                Products = report.Archived.Products + 1
+                            }
                         };
                     }
                     else if (productConfig.Archived == false && isArchived)
@@ -270,7 +321,10 @@ public class ConfigSyncService
                         await Products.UnarchiveProductAsync(productConfig.Key);
                         report = report with
                         {
-                            Unarchived = report.Unarchived with { Products = report.Unarchived.Products + 1 }
+                            Unarchived = report.Unarchived with
+                            {
+                                Products = report.Unarchived.Products + 1
+                            }
                         };
                     }
                 }
@@ -283,7 +337,7 @@ public class ConfigSyncService
                         var currentFeatures = await Features.GetFeaturesByProductAsync(productConfig.Key);
                         var currentFeatureKeys = new HashSet<string>(currentFeatures.Select(f => f.Key));
                         var productFeatureKeys = new HashSet<string>(productConfig.Features);
-                        
+
                         // Associate features in config but not in database
                         foreach (var featureKey in productConfig.Features)
                         {
@@ -308,7 +362,10 @@ public class ConfigSyncService
                         {
                             new ConfigSyncError("product", productConfig.Key, $"Failed to sync feature associations: {error.Message}")
                         };
-                        report = report with { Errors = errors };
+                        report = report with
+                        {
+                            Errors = errors
+                        };
                     }
                 }
             }
@@ -318,17 +375,21 @@ public class ConfigSyncService
                 {
                     new ConfigSyncError("product", productConfig.Key, error.Message)
                 };
-                report = report with { Errors = errors };
+                report = report with
+                {
+                    Errors = errors
+                };
             }
         }
 
         // Phase 5: Sync Plans (Dependent on Products)
         // Track plans that need onExpireTransitionToBillingCycleKey set after billing cycles are created
         var plansPendingTransitionKey = new List<(string PlanKey, string TransitionKey)>();
-        
+
         foreach (var productConfig in config.Products)
         {
-            if (productConfig.Plans == null) continue;
+            if (productConfig.Plans == null)
+                continue;
 
             foreach (var planConfig in productConfig.Plans)
             {
@@ -336,20 +397,20 @@ public class ConfigSyncService
                 {
                     // Plan keys are globally unique, so lookup by key only
                     plansByKey.TryGetValue(planConfig.Key, out var existing);
-                    
+
                     // Check if billing cycle exists in database or will be created in this config
                     var transitionBillingCycleKey = planConfig.OnExpireTransitionToBillingCycleKey;
                     var transitionBillingCycleExistsInDb = transitionBillingCycleKey != null &&
                         billingCyclesByKey.ContainsKey(transitionBillingCycleKey);
-                    
+
                     // Check if billing cycle exists in config (will be created in this sync)
                     var transitionBillingCycleExistsInConfig = transitionBillingCycleKey != null &&
-                        config.Products.Any(p => 
-                            (p.Plans ?? new List<PlanConfig>()).Any(plan => 
+                        config.Products.Any(p =>
+                            (p.Plans ?? new List<PlanConfig>()).Any(plan =>
                                 (plan.BillingCycles ?? new List<BillingCycleConfig>()).Any(bc => bc.Key == transitionBillingCycleKey)
                             )
                         );
-                    
+
                     if (existing == null)
                     {
                         // Create new plan
@@ -361,26 +422,32 @@ public class ConfigSyncService
                             transitionBillingCycleExistsInDb ? transitionBillingCycleKey : null,
                             planConfig.Metadata
                         );
-                        
+
                         await Plans.CreatePlanAsync(createDto);
                         report = report with
                         {
-                            Created = report.Created with { Plans = report.Created.Plans + 1 }
+                            Created = report.Created with
+                            {
+                                Plans = report.Created.Plans + 1
+                            }
                         };
-                        
+
                         // If billing cycle doesn't exist in DB yet but exists in config, defer setting the transition key
                         if (transitionBillingCycleKey != null && !transitionBillingCycleExistsInDb && transitionBillingCycleExistsInConfig)
                         {
                             plansPendingTransitionKey.Add((planConfig.Key, transitionBillingCycleKey));
                         }
-                        
+
                         // Archive if needed
                         if (planConfig.Archived == true)
                         {
                             await Plans.ArchivePlanAsync(planConfig.Key);
                             report = report with
                             {
-                                Archived = report.Archived with { Plans = report.Archived.Plans + 1 }
+                                Archived = report.Archived with
+                                {
+                                    Plans = report.Archived.Plans + 1
+                                }
                             };
                         }
                     }
@@ -388,7 +455,7 @@ public class ConfigSyncService
                     {
                         // Check if entity needs updating
                         var needsUpdate = HasPlanChanges(planConfig, existing);
-                        
+
                         if (needsUpdate)
                         {
                             var shouldClearTransition = transitionBillingCycleKey == null &&
@@ -401,9 +468,9 @@ public class ConfigSyncService
                                 ClearOnExpireTransitionToBillingCycleKey: shouldClearTransition,
                                 Metadata: planConfig.Metadata
                             );
-                            
+
                             // Only update if there are fields to update
-                            if (updateDto.DisplayName != null || updateDto.Description != null || 
+                            if (updateDto.DisplayName != null || updateDto.Description != null ||
                                 updateDto.OnExpireTransitionToBillingCycleKey != null ||
                                 updateDto.ClearOnExpireTransitionToBillingCycleKey ||
                                 updateDto.Metadata != null)
@@ -411,10 +478,13 @@ public class ConfigSyncService
                                 await Plans.UpdatePlanAsync(planConfig.Key, updateDto);
                                 report = report with
                                 {
-                                    Updated = report.Updated with { Plans = report.Updated.Plans + 1 }
+                                    Updated = report.Updated with
+                                    {
+                                        Plans = report.Updated.Plans + 1
+                                    }
                                 };
                             }
-                            
+
                             // If billing cycle doesn't exist in DB yet but exists in config, defer setting the transition key
                             if (transitionBillingCycleKey != null && !transitionBillingCycleExistsInDb && transitionBillingCycleExistsInConfig)
                             {
@@ -434,7 +504,7 @@ public class ConfigSyncService
                                 plansPendingTransitionKey.Add((planConfig.Key, transitionBillingCycleKey));
                             }
                         }
-                        
+
                         // Handle archive status
                         var isArchived = existing.Status == "archived";
                         if (planConfig.Archived == true && !isArchived)
@@ -442,7 +512,10 @@ public class ConfigSyncService
                             await Plans.ArchivePlanAsync(planConfig.Key);
                             report = report with
                             {
-                                Archived = report.Archived with { Plans = report.Archived.Plans + 1 }
+                                Archived = report.Archived with
+                                {
+                                    Plans = report.Archived.Plans + 1
+                                }
                             };
                         }
                         else if (planConfig.Archived == false && isArchived)
@@ -450,7 +523,10 @@ public class ConfigSyncService
                             await Plans.UnarchivePlanAsync(planConfig.Key);
                             report = report with
                             {
-                                Unarchived = report.Unarchived with { Plans = report.Unarchived.Plans + 1 }
+                                Unarchived = report.Unarchived with
+                                {
+                                    Plans = report.Unarchived.Plans + 1
+                                }
                             };
                         }
                     }
@@ -468,7 +544,7 @@ public class ConfigSyncService
                             foreach (var (featureKey, value) in planConfig.FeatureValues)
                             {
                                 currentFeatureMap.TryGetValue(featureKey, out var currentValue);
-                                
+
                                 // Only update if value changed
                                 if (currentValue != value)
                                 {
@@ -479,10 +555,13 @@ public class ConfigSyncService
                                         {
                                             new ConfigSyncWarning("plan", planConfig.Key, $"Feature '{featureKey}' not found, skipping feature value")
                                         };
-                                        report = report with { Warnings = warnings };
+                                        report = report with
+                                        {
+                                            Warnings = warnings
+                                        };
                                         continue;
                                     }
-                                    
+
                                     await Plans.SetFeatureValueAsync(planConfig.Key, featureKey, value);
                                 }
                             }
@@ -502,7 +581,10 @@ public class ConfigSyncService
                             {
                                 new ConfigSyncError("plan", planConfig.Key, $"Failed to sync feature values: {error.Message}")
                             };
-                            report = report with { Errors = errors };
+                            report = report with
+                            {
+                                Errors = errors
+                            };
                         }
                     }
                 }
@@ -512,7 +594,10 @@ public class ConfigSyncService
                     {
                         new ConfigSyncError("plan", planConfig.Key, error.Message)
                     };
-                    report = report with { Errors = errors };
+                    report = report with
+                    {
+                        Errors = errors
+                    };
                 }
             }
         }
@@ -520,11 +605,13 @@ public class ConfigSyncService
         // Phase 6: Sync Billing Cycles (Dependent on Plans)
         foreach (var productConfig in config.Products)
         {
-            if (productConfig.Plans == null) continue;
+            if (productConfig.Plans == null)
+                continue;
 
             foreach (var planConfig in productConfig.Plans)
             {
-                if (planConfig.BillingCycles == null) continue;
+                if (planConfig.BillingCycles == null)
+                    continue;
 
                 foreach (var billingCycleConfig in planConfig.BillingCycles)
                 {
@@ -532,7 +619,7 @@ public class ConfigSyncService
                     {
                         // Billing cycle keys are globally unique, so lookup by key only
                         billingCyclesByKey.TryGetValue(billingCycleConfig.Key, out var existing);
-                        
+
                         if (existing == null)
                         {
                             // Create new billing cycle
@@ -545,20 +632,26 @@ public class ConfigSyncService
                                 billingCycleConfig.DurationValue,
                                 billingCycleConfig.ExternalProductId
                             );
-                            
+
                             await BillingCycles.CreateBillingCycleAsync(createDto);
                             report = report with
                             {
-                                Created = report.Created with { BillingCycles = report.Created.BillingCycles + 1 }
+                                Created = report.Created with
+                                {
+                                    BillingCycles = report.Created.BillingCycles + 1
+                                }
                             };
-                            
+
                             // Archive if needed
                             if (billingCycleConfig.Archived == true)
                             {
                                 await BillingCycles.ArchiveBillingCycleAsync(billingCycleConfig.Key);
                                 report = report with
                                 {
-                                    Archived = report.Archived with { BillingCycles = report.Archived.BillingCycles + 1 }
+                                    Archived = report.Archived with
+                                    {
+                                        BillingCycles = report.Archived.BillingCycles + 1
+                                    }
                                 };
                             }
                         }
@@ -566,7 +659,7 @@ public class ConfigSyncService
                         {
                             // Check if entity needs updating
                             var needsUpdate = HasBillingCycleChanges(billingCycleConfig, existing);
-                            
+
                             if (needsUpdate)
                             {
                                 var updateDto = new UpdateBillingCycleDto(
@@ -576,14 +669,17 @@ public class ConfigSyncService
                                     DurationUnit: billingCycleConfig.DurationUnit,
                                     ExternalProductId: billingCycleConfig.ExternalProductId
                                 );
-                                
+
                                 await BillingCycles.UpdateBillingCycleAsync(billingCycleConfig.Key, updateDto);
                                 report = report with
                                 {
-                                    Updated = report.Updated with { BillingCycles = report.Updated.BillingCycles + 1 }
+                                    Updated = report.Updated with
+                                    {
+                                        BillingCycles = report.Updated.BillingCycles + 1
+                                    }
                                 };
                             }
-                            
+
                             // Handle archive status
                             var isArchived = existing.Status == "archived";
                             if (billingCycleConfig.Archived == true && !isArchived)
@@ -591,7 +687,10 @@ public class ConfigSyncService
                                 await BillingCycles.ArchiveBillingCycleAsync(billingCycleConfig.Key);
                                 report = report with
                                 {
-                                    Archived = report.Archived with { BillingCycles = report.Archived.BillingCycles + 1 }
+                                    Archived = report.Archived with
+                                    {
+                                        BillingCycles = report.Archived.BillingCycles + 1
+                                    }
                                 };
                             }
                             else if (billingCycleConfig.Archived == false && isArchived)
@@ -599,7 +698,10 @@ public class ConfigSyncService
                                 await BillingCycles.UnarchiveBillingCycleAsync(billingCycleConfig.Key);
                                 report = report with
                                 {
-                                    Unarchived = report.Unarchived with { BillingCycles = report.Unarchived.BillingCycles + 1 }
+                                    Unarchived = report.Unarchived with
+                                    {
+                                        BillingCycles = report.Unarchived.BillingCycles + 1
+                                    }
                                 };
                             }
                         }
@@ -610,7 +712,10 @@ public class ConfigSyncService
                         {
                             new ConfigSyncError("billingCycle", billingCycleConfig.Key, error.Message)
                         };
-                        report = report with { Errors = errors };
+                        report = report with
+                        {
+                            Errors = errors
+                        };
                     }
                 }
             }
@@ -636,7 +741,10 @@ public class ConfigSyncService
                     {
                         new ConfigSyncError("plan", planKey, $"Billing cycle key '{transitionKey}' referenced in onExpireTransitionToBillingCycleKey does not exist")
                     };
-                    report = report with { Errors = errors };
+                    report = report with
+                    {
+                        Errors = errors
+                    };
                 }
             }
             catch (Exception error)
@@ -645,10 +753,17 @@ public class ConfigSyncService
                 {
                     new ConfigSyncError("plan", planKey, $"Failed to set onExpireTransitionToBillingCycleKey: {error.Message}")
                 };
-                report = report with { Errors = errors };
+                report = report with
+                {
+                    Errors = errors
+                };
             }
         }
 
+        if (Owner != null)
+            await SyncAccountingConfig.Apply(Owner, config, report);
+        if (Owner != null)
+            report.Details = ConfigExport.Compare(configurationBefore!, await ConfigExport.Capture(Owner, config));
         return report;
     }
 
@@ -686,68 +801,96 @@ public class ConfigSyncService
 
     private static bool DeepEqual(object? a, object? b)
     {
-        if (ReferenceEquals(a, b)) return true;
-        if (a == null || b == null) return a == b;
-        if (a.GetType() != b.GetType()) return false;
-        
+        if (ReferenceEquals(a, b))
+            return true;
+        if (a == null || b == null)
+            return a == b;
+        if (a.GetType() != b.GetType())
+            return false;
+
         // For dictionaries, compare key-value pairs
         if (a is Dictionary<string, object?> dictA && b is Dictionary<string, object?> dictB)
         {
-            if (dictA.Count != dictB.Count) return false;
+            if (dictA.Count != dictB.Count)
+                return false;
             foreach (var (key, valueA) in dictA)
             {
-                if (!dictB.TryGetValue(key, out var valueB)) return false;
-                if (!DeepEqual(valueA, valueB)) return false;
+                if (!dictB.TryGetValue(key, out var valueB))
+                    return false;
+                if (!DeepEqual(valueA, valueB))
+                    return false;
             }
             return true;
         }
-        
+
         // For simple types, use equality
         return a.Equals(b);
     }
 
     private static string? NormalizeValue(string? value)
     {
-        if (string.IsNullOrEmpty(value)) return null;
+        if (string.IsNullOrEmpty(value))
+            return null;
         return value;
     }
 
     private static bool HasFeatureChanges(FeatureConfig config, FeatureDto existing)
     {
-        if (config.DisplayName != existing.DisplayName) return true;
-        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description)) return true;
-        if (config.ValueType != existing.ValueType) return true;
-        if (config.DefaultValue != existing.DefaultValue) return true;
-        if (NormalizeValue(config.GroupName) != NormalizeValue(existing.GroupName)) return true;
-        if (!DeepEqual(config.Validator ?? null, existing.Validator ?? null)) return true;
-        if (!DeepEqual(config.Metadata ?? null, existing.Metadata ?? null)) return true;
+        if (config.DisplayName != existing.DisplayName)
+            return true;
+        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description))
+            return true;
+        if (config.ValueType != existing.ValueType)
+            return true;
+        if (config.DefaultValue != existing.DefaultValue)
+            return true;
+        if (config.MeteredConfig != null && config.MeteredConfig != existing.MeteredConfig)
+            return true;
+        if (NormalizeValue(config.GroupName) != NormalizeValue(existing.GroupName))
+            return true;
+        if (!DeepEqual(config.Validator ?? null, existing.Validator ?? null))
+            return true;
+        if (!DeepEqual(config.Metadata ?? null, existing.Metadata ?? null))
+            return true;
         return false;
     }
 
     private static bool HasProductChanges(ProductConfig config, ProductDto existing)
     {
-        if (config.DisplayName != existing.DisplayName) return true;
-        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description)) return true;
-        if (!DeepEqual(config.Metadata ?? null, existing.Metadata ?? null)) return true;
+        if (config.DisplayName != existing.DisplayName)
+            return true;
+        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description))
+            return true;
+        if (!DeepEqual(config.Metadata ?? null, existing.Metadata ?? null))
+            return true;
         return false;
     }
 
     private static bool HasPlanChanges(PlanConfig config, PlanDto existing)
     {
-        if (config.DisplayName != existing.DisplayName) return true;
-        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description)) return true;
-        if (NormalizeValue(config.OnExpireTransitionToBillingCycleKey) != NormalizeValue(existing.OnExpireTransitionToBillingCycleKey)) return true;
-        if (!DeepEqual(config.Metadata ?? null, existing.Metadata ?? null)) return true;
+        if (config.DisplayName != existing.DisplayName)
+            return true;
+        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description))
+            return true;
+        if (NormalizeValue(config.OnExpireTransitionToBillingCycleKey) != NormalizeValue(existing.OnExpireTransitionToBillingCycleKey))
+            return true;
+        if (!DeepEqual(config.Metadata ?? null, existing.Metadata ?? null))
+            return true;
         return false;
     }
 
     private static bool HasBillingCycleChanges(BillingCycleConfig config, BillingCycleDto existing)
     {
-        if (config.DisplayName != existing.DisplayName) return true;
-        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description)) return true;
-        if (config.DurationValue != existing.DurationValue) return true;
-        if (config.DurationUnit != existing.DurationUnit) return true;
-        if (NormalizeValue(config.ExternalProductId) != NormalizeValue(existing.ExternalProductId)) return true;
+        if (config.DisplayName != existing.DisplayName)
+            return true;
+        if (NormalizeValue(config.Description) != NormalizeValue(existing.Description))
+            return true;
+        if (config.DurationValue != existing.DurationValue)
+            return true;
+        if (config.DurationUnit != existing.DurationUnit)
+            return true;
+        if (NormalizeValue(config.ExternalProductId) != NormalizeValue(existing.ExternalProductId))
+            return true;
         return false;
     }
 

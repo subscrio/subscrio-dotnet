@@ -51,6 +51,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="Fixtures/Schema1_1/*.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
